@@ -128,11 +128,7 @@ impl TcpServer {
             }
         }));
 
-        Ok(Self {
-            ingress_rx: Mutex::new(ingress_rx),
-            local_addr,
-            writers,
-        })
+        Ok(Self { ingress_rx: Mutex::new(ingress_rx), local_addr, writers })
     }
 
     /// Spawns a handler task for the given [`TcpStream`]

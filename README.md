@@ -7,12 +7,21 @@
 
 [Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/master/CHANGELOG.md)
 
-A pure Rust implementation of TURN. Majorly refactored fork of 
-[webrtc-rs/turn](https://github.com/webrtc-rs/webrtc/tree/f9734b79b0b87b15f157780ef3c26480cebd5d84/turn).
+TURN implementation used by [Medea media server](https://github.com/instrumentisto/medea). Majorly refactored fork of the [`webrtc-rs/turn` crate](https://github.com/webrtc-rs/webrtc/tree/89285ceba23dc57fc99386cb978d2d23fe909437/turn).
 
 
 
 
 ## License
 
-Dual licensing under both MIT and Apache-2.0 is the currently accepted standard by the Rust language community and has been used for both the compiler and many public libraries since (see https://doc.rust-lang.org/1.6.0/complement-project-faq.html#why-dual-mitasl2-license). In order to match the community standards, webrtc-rs is using the dual MIT+Apache-2.0 license.
+Copyright © 2024 Instrumentisto Team, <https://github.com/instrumentisto>
+
+Licensed under either of [Apache License, Version 2.0][APACHE] or [MIT license][MIT] at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this crate by you, as defined in the [Apache-2.0 license][APACHE], shall be dual licensed as above, without any additional terms or conditions.
+
+
+
+
+[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/main/LICENSE-APACHE
+[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/main/LICENSE-MIT

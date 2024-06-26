@@ -47,11 +47,8 @@ impl RelayAllocator {
         use_ipv4: bool,
         requested_port: u16,
     ) -> Result<(Arc<UdpSocket>, SocketAddr), Error> {
-        let max_retries = if self.max_retries == 0 {
-            10
-        } else {
-            self.max_retries
-        };
+        let max_retries =
+            if self.max_retries == 0 { 10 } else { self.max_retries };
 
         if requested_port == 0 {
             for _ in 0..max_retries {

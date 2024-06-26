@@ -28,11 +28,7 @@ pub(crate) struct ChannelBind {
 impl ChannelBind {
     /// Creates a new [`ChannelBind`]
     pub(crate) const fn new(number: u16, peer: SocketAddr) -> Self {
-        Self {
-            number,
-            peer,
-            reset_tx: None,
-        }
+        Self { number, peer, reset_tx: None }
     }
 
     /// Starts [`ChannelBind`]'s internal lifetime watching loop.
@@ -121,17 +117,14 @@ mod channel_bind_test {
 
         let addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), 0);
 
-        a.add_channel_bind(ChannelNumber::MIN, addr, lifetime)
-            .await?;
+        a.add_channel_bind(ChannelNumber::MIN, addr, lifetime).await?;
 
         Ok(a)
     }
 
     #[tokio::test]
     async fn test_channel_bind() {
-        let a = create_channel_bind(Duration::from_millis(20))
-            .await
-            .unwrap();
+        let a = create_channel_bind(Duration::from_millis(20)).await.unwrap();
 
         let result = a.get_channel_addr(&ChannelNumber::MIN).await;
         if let Some(addr) = result {

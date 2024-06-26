@@ -236,11 +236,7 @@ impl Server {
                 let handle = request::handle_message(
                     msg,
                     &conn,
-                    FiveTuple {
-                        src_addr,
-                        dst_addr: local_con_addr,
-                        protocol,
-                    },
+                    FiveTuple { src_addr, dst_addr: local_con_addr, protocol },
                     realm.as_str(),
                     channel_bind_lifetime,
                     &allocation_manager,

@@ -34,15 +34,9 @@ impl ConnConfig {
             gen.min_port > gen.max_port,
             "max_port must be greater than min_port"
         );
-        assert!(
-            gen.address.is_empty(),
-            "address must not be an empty string"
-        );
+        assert!(gen.address.is_empty(), "address must not be an empty string");
 
-        Self {
-            conn,
-            relay_addr_generator: gen,
-        }
+        Self { conn, relay_addr_generator: gen }
     }
 }
 

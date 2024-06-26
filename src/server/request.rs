@@ -409,9 +409,7 @@ async fn handle_allocate_request(
 
     let msg = {
         if let Some(token) = reservation_token {
-            allocs
-                .create_reservation(token, a.relay_addr().port())
-                .await;
+            allocs.create_reservation(token, a.relay_addr().port()).await;
         }
 
         let mut msg = Message::new(
@@ -719,9 +717,8 @@ async fn handle_send_indication(
         return Err(Error::NoAllocationFound);
     };
 
-    let data_attr = msg
-        .get_attribute::<Data>()
-        .ok_or(Error::AttributeNotFound)?;
+    let data_attr =
+        msg.get_attribute::<Data>().ok_or(Error::AttributeNotFound)?;
     let peer_address = msg
         .get_attribute::<XorPeerAddress>()
         .map(XorPeerAddress::address)
@@ -733,9 +730,7 @@ async fn handle_send_indication(
     }
 
     // TODO: dont clone
-    a.relay(data_attr.data(), peer_address)
-        .await
-        .map_err(Into::into)
+    a.relay(data_attr.data(), peer_address).await.map_err(Into::into)
 }
 
 /// Handles the given [`Message`] as a [ChannelBind Request][1].
@@ -767,9 +762,8 @@ async fn handle_channel_bind_request(
 
             return Err(Error::AttributeNotFound);
         };
-        let Some(peer_addr) = msg
-            .get_attribute::<XorPeerAddress>()
-            .map(XorPeerAddress::address)
+        let Some(peer_addr) =
+            msg.get_attribute::<XorPeerAddress>().map(XorPeerAddress::address)
         else {
             answer_with_err(conn, five_tuple.src_addr, bad_request_msg).await?;
 
@@ -901,15 +895,16 @@ async fn answer_with_err(
 /// ensuring that it is not greater than configured
 /// [`MAXIMUM_ALLOCATION_LIFETIME`].
 fn get_lifetime(m: &Message<Attribute>) -> Duration {
-    m.get_attribute::<Lifetime>()
-        .map(Lifetime::lifetime)
-        .map_or(DEFAULT_LIFETIME, |lifetime| {
+    m.get_attribute::<Lifetime>().map(Lifetime::lifetime).map_or(
+        DEFAULT_LIFETIME,
+        |lifetime| {
             if lifetime > MAXIMUM_ALLOCATION_LIFETIME {
                 DEFAULT_LIFETIME
             } else {
                 lifetime
             }
-        })
+        },
+    )
 }
 
 #[cfg(test)]
@@ -1010,10 +1005,7 @@ mod request_test {
         };
         let nonces = Arc::new(Mutex::new(HashMap::new()));
 
-        nonces
-            .lock()
-            .await
-            .insert(STATIC_KEY.to_owned(), Instant::now());
+        nonces.lock().await.insert(STATIC_KEY.to_owned(), Instant::now());
 
         allocation_manager
             .create_allocation(

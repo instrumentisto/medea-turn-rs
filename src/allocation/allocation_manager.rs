@@ -148,10 +148,7 @@ impl Manager {
         let a = Arc::new(a);
         #[allow(clippy::unwrap_used)]
         drop(
-            self.allocations
-                .lock()
-                .unwrap()
-                .insert(five_tuple, Arc::clone(&a)),
+            self.allocations.lock().unwrap().insert(five_tuple, Arc::clone(&a)),
         );
 
         Ok(a)
@@ -330,8 +327,7 @@ mod allocation_manager_test {
 
         let port = {
             // add permission with peer1 address
-            a.add_permission(peer_listener1.local_addr().unwrap().ip())
-                .await;
+            a.add_permission(peer_listener1.local_addr().unwrap().ip()).await;
             // add channel with min channel number and peer2 address
             a.add_channel_bind(
                 ChannelNumber::MIN,
@@ -377,10 +373,7 @@ mod allocation_manager_test {
         let data = data_ch_rx.recv().await.unwrap();
 
         // resolve channel data
-        assert!(
-            ChannelData::is_channel_data(&data),
-            "should be channel data"
-        );
+        assert!(ChannelData::is_channel_data(&data), "should be channel data");
 
         let channel_data = ChannelData::decode(data).unwrap();
         assert_eq!(

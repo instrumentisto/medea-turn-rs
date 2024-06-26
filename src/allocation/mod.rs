@@ -1,6 +1,6 @@
-//! TURN server [Allocation].
+//! TURN server [allocation].
 //!
-//! [Allocation]:https://datatracker.ietf.org/doc/html/rfc5766#section-5
+//! [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
 
 mod allocation_manager;
 mod channel_bind;
@@ -72,11 +72,7 @@ impl AllocInfo {
         username: String,
         relayed_bytes: usize,
     ) -> Self {
-        Self {
-            five_tuple,
-            username,
-            relayed_bytes,
-        }
+        Self { five_tuple, username, relayed_bytes }
     }
 }
 
@@ -260,11 +256,7 @@ impl Allocation {
         &self,
         number: &u16,
     ) -> Option<SocketAddr> {
-        self.channel_bindings
-            .lock()
-            .await
-            .get(number)
-            .map(ChannelBind::peer)
+        self.channel_bindings.lock().await.get(number).map(ChannelBind::peer)
     }
 
     /// Gets the [`ChannelBind`]'s number from this [`Allocation`] by `addr`.
