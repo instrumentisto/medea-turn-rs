@@ -15,7 +15,7 @@ eq = $(if $(or $(1),$(2)),$(and $(findstring $(1),$(2)),\
 # Aliases #
 ###########
 
-all: fmt lint test.unit
+all: fmt lint docs test
 
 
 docs: cargo.doc
@@ -27,7 +27,7 @@ fmt: cargo.fmt
 lint: cargo.lint
 
 
-test: test.unit
+test: test.cargo
 
 
 
@@ -36,22 +36,18 @@ test: test.unit
 # Cargo commands #
 ##################
 
-cargo-crate = $(if $(call eq,$(crate),),--workspace,-p $(crate))
-
-
-# Generate crates documentation from Rust sources.
+# Generate crate documentation from Rust sources.
 #
 # Usage:
-#	make cargo.doc [crate=<crate-name>] [private=(yes|no)]
-#	               [open=(yes|no)] [clean=(no|yes)]
+#	make cargo.doc [private=(yes|no)] [open=(no|yes)] [clean=(no|yes)]
 
 cargo.doc:
 ifeq ($(clean),yes)
 	@rm -rf target/doc/
 endif
-	cargo doc $(cargo-crate) --all-features \
+	cargo doc --all-features \
 		$(if $(call eq,$(private),no),,--document-private-items) \
-		$(if $(call eq,$(open),no),,--open)
+		$(if $(call eq,$(open),yes),--open,)
 
 
 # Format Rust sources with rustfmt.
@@ -66,10 +62,13 @@ cargo.fmt:
 # Lint Rust sources with Clippy.
 #
 # Usage:
-#	make cargo.lint [crate=<crate-name>]
+#	make cargo.lint
 
 cargo.lint:
-	cargo clippy $(cargo-crate) --all-features -- -D warnings
+	cargo clippy --all-features -- -D warnings
+
+
+cargo.test: test.cargo
 
 
 
@@ -78,13 +77,12 @@ cargo.lint:
 # Testing commands #
 ####################
 
-
-# Run project unit tests.
+# Run Rust tests.
 #
 # Usage:
-#	make test.unit [crate=<crate-name>] [careful=(no|yes)]
+#	make test.cargo [careful=(no|yes)]
 
-test.unit:
+test.cargo:
 ifeq ($(careful),yes)
 ifeq ($(shell cargo install --list | grep cargo-careful),)
 	cargo install cargo-careful
@@ -103,6 +101,6 @@ endif
 # .PHONY section #
 ##################
 
-.PHONY: all docs mt lint test \
-        cargo.doc cargo.fmt cargo.lint \
-        test.unit
+.PHONY: all docs fmt lint test \
+        cargo.doc cargo.fmt cargo.lint cargo.test \
+        test.cargo

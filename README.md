@@ -1,5 +1,5 @@
-medea-turn-rs
-====
+`medea-turn`
+============
 
 [![CI](https://github.com/instrumentisto/medea-turn-rs/workflows/CI/badge.svg?branch=main "CI")](https://github.com/instrumentisto/medea-turn-rs/actions?query=workflow%3ACI+branch%3Amain)
 [![Rust 1.70+](https://img.shields.io/badge/rustc-1.70+-lightgray.svg "Rust 1.70+")](https://blog.rust-lang.org/2023/06/01/Rust-1.70.0.html)
