@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CACHE: ${{ (github.event_name == 'push'
+    || github.event_name == 'pull_request')
+    && github.ref != 'refs/heads/main'
+    && !contains(github.event.head_commit.message, '[fresh ci]') }}
+  RUST_BACKTRACE: 1
+  RUST_VER: "1.79"
+
+jobs:
+
+  ################
+  # Pull Request #
+  ################
+
+  pr:
+    if: ${{ github.event_name == 'pull_request' }}
+    needs:
+      - clippy
+      - rustdoc
+      - rustfmt
+      - test-unit
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+
+
+
+
+  ##########################
+  # Linting and formatting #
+  ##########################
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VER }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ env.CACHE == 'true' }}
+
+      - run: make cargo.lint
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt
+
+      - run: make cargo.fmt check=yes
+
+
+
+
+  ###########
+  # Testing #
+  ###########
+
+  test-unit:
+    name: test (unit, ${{ matrix.toolchain }})
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["stable", "nightly"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ (matrix.toolchain == 'stable' && env.RUST_VER)
+            ||                                  matrix.toolchain }}
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ env.CACHE == 'true' }}
+
+      - run: cargo install cargo-careful
+        if: ${{ matrix.toolchain == 'nightly' }}
+
+      - run: make test.unit
+          careful=${{ (matrix.toolchain == 'nightly' && 'yes')
+          ||                                   'no' }}
+
+
+
+
+  ############
+  # Building #
+  ############
+
+  rustdoc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VER }}
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ env.CACHE == 'true' }}
+
+      - run: make cargo.doc private=yes open=no
+        env:
+          RUSTFLAGS: -D warnings
