@@ -153,7 +153,7 @@ mod con;
 mod relay;
 mod server;
 
-use std::{io, net::SocketAddr};
+use std::net::SocketAddr;
 
 use thiserror::Error;
 
@@ -161,7 +161,7 @@ pub use self::{
     allocation::{AllocInfo, FiveTuple},
     con::TcpServer,
     relay::RelayAllocator,
-    server::{Config, ConnConfig, Server},
+    server::{Config, Server},
 };
 
 /// External authentication handler.
@@ -189,18 +189,6 @@ pub enum Error {
     /// exceeded.
     #[error("turn: max retries exceeded")]
     MaxRetriesExceeded,
-
-    /// Failed to handle channel data since channel number is incorrect.
-    #[error("channel number not in [0x4000, 0x7FFF]")]
-    InvalidChannelNumber,
-
-    /// Failed to handle channel data cause of incorrect message length.
-    #[error("channelData length != len(Data)")]
-    BadChannelDataLength,
-
-    /// Failed to handle message since it's shorter than expected.
-    #[error("unexpected EOF")]
-    UnexpectedEof,
 
     /// A peer address is part of a different address family than that of the
     /// relayed transport address of the allocation.
@@ -297,37 +285,11 @@ pub enum Error {
     #[error("no such channel bind")]
     NoSuchChannelBind,
 
-    /// Failed to decode message.
-    #[error("Failed to decode STUN/TURN message: {0:?}")]
-    Decode(bytecodec::ErrorKind),
-
     /// Failed to encode message.
     #[error("Failed to encode STUN/TURN message: {0:?}")]
     Encode(bytecodec::ErrorKind),
 
-    /// Tried to use dead transport.
-    #[error("Underlying TCP/UDP transport is dead")]
-    TransportIsDead,
-
-    /// Error for transport.
-    #[error("{0}")]
-    Io(#[source] IoError),
-}
-
-/// [`io::Error`] wrapper.
-#[derive(Debug, Error)]
-#[error("io error: {0}")]
-pub struct IoError(#[from] pub io::Error);
-
-// Workaround for wanting PartialEq for io::Error.
-impl PartialEq for IoError {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.kind() == other.0.kind()
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Self::Io(IoError(e))
-    }
+    /// Failed to encode message.
+    #[error("Transport error: {0}")]
+    Transport(#[from] con::Error),
 }

@@ -22,26 +22,18 @@ pub(crate) struct ChannelBind {
 
     /// Channel to the internal loop used to update lifetime or drop channel
     /// binding.
-    reset_tx: Option<mpsc::Sender<Duration>>,
+    reset_tx: mpsc::Sender<Duration>,
 }
 
 impl ChannelBind {
     /// Creates a new [`ChannelBind`]
-    pub(crate) const fn new(number: u16, peer: SocketAddr) -> Self {
-        Self { number, peer, reset_tx: None }
-    }
-
-    /// Starts [`ChannelBind`]'s internal lifetime watching loop.
-    pub(crate) fn start(
-        &mut self,
+    pub(crate) fn new(
+        number: u16,
+        peer: SocketAddr,
         bindings: Arc<Mutex<HashMap<u16, Self>>>,
         lifetime: Duration,
-    ) {
+    ) -> Self {
         let (reset_tx, mut reset_rx) = mpsc::channel(1);
-        self.reset_tx = Some(reset_tx);
-
-        let number = self.number;
-
         drop(tokio::spawn(async move {
             let timer = sleep(lifetime);
             tokio::pin!(timer);
@@ -66,8 +58,9 @@ impl ChannelBind {
                 }
             }
         }));
-    }
 
+        Self { peer, number, reset_tx }
+    }
     /// Returns transport address of the peer.
     pub(crate) const fn peer(&self) -> SocketAddr {
         self.peer
@@ -80,9 +73,7 @@ impl ChannelBind {
 
     /// Updates [`ChannelBind`]'s lifetime.
     pub(crate) async fn refresh(&self, lifetime: Duration) {
-        if let Some(tx) = &self.reset_tx {
-            _ = tx.send(lifetime).await;
-        }
+        _ = self.reset_tx.send(lifetime).await;
     }
 }
 
@@ -93,9 +84,10 @@ mod channel_bind_test {
     use tokio::net::UdpSocket;
 
     use crate::{
-        allocation::Allocation,
+        allocation::{Allocation, AllocationMap},
         attr::{ChannelNumber, Username},
-        con, Error, FiveTuple,
+        server::DEFAULT_LIFETIME,
+        Error, FiveTuple,
     };
 
     use super::*;
@@ -103,7 +95,7 @@ mod channel_bind_test {
     async fn create_channel_bind(
         lifetime: Duration,
     ) -> Result<Allocation, Error> {
-        let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
+        let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let relay_socket = Arc::clone(&turn_socket);
         let relay_addr = relay_socket.local_addr().unwrap();
         let a = Allocation::new(
@@ -111,6 +103,8 @@ mod channel_bind_test {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
+            DEFAULT_LIFETIME,
+            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );

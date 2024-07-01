@@ -9,8 +9,10 @@ use std::{
 };
 
 use async_trait::async_trait;
+use bytecodec::DecodeExt;
 use bytes::BytesMut;
 use futures::StreamExt;
+use stun_codec::MessageDecoder;
 use tokio::{
     io::AsyncWriteExt as _,
     net::{TcpListener, TcpStream},
@@ -19,9 +21,9 @@ use tokio::{
 use tokio_util::codec::{Decoder, FramedRead};
 
 use crate::{
-    attr::PROTO_TCP,
-    chandata::nearest_padded_value_length,
-    con::{Conn, Error},
+    attr::{Attribute, PROTO_TCP},
+    chandata::{nearest_padded_value_length, ChannelData},
+    con::{Conn, Error, Request},
 };
 
 /// Channels to the active TCP sessions.
@@ -29,7 +31,7 @@ type TcpWritersMap = Arc<
     Mutex<
         HashMap<
             SocketAddr,
-            mpsc::Sender<(Vec<u8>, oneshot::Sender<Result<usize, Error>>)>,
+            mpsc::Sender<(Vec<u8>, oneshot::Sender<Result<(), Error>>)>,
         >,
     >,
 >;
@@ -38,7 +40,7 @@ type TcpWritersMap = Arc<
 #[derive(Debug)]
 pub struct TcpServer {
     /// Ingress messages receiver.
-    ingress_rx: Mutex<mpsc::Receiver<(Vec<u8>, SocketAddr)>>,
+    ingress_rx: Mutex<mpsc::Receiver<(Request, SocketAddr)>>,
 
     /// Local [`TcpListener`] address.
     local_addr: SocketAddr,
@@ -49,7 +51,7 @@ pub struct TcpServer {
 
 #[async_trait]
 impl Conn for TcpServer {
-    async fn recv_from(&self) -> Result<(Vec<u8>, SocketAddr), Error> {
+    async fn recv_from(&self) -> Result<(Request, SocketAddr), Error> {
         if let Some((data, addr)) = self.ingress_rx.lock().await.recv().await {
             Ok((data, addr))
         } else {
@@ -62,7 +64,7 @@ impl Conn for TcpServer {
         &self,
         data: Vec<u8>,
         target: SocketAddr,
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         let mut writers = self.writers.lock().await;
         match writers.entry(target) {
             Entry::Occupied(mut e) => {
@@ -70,6 +72,7 @@ impl Conn for TcpServer {
                 if e.get_mut().send((data, res_tx)).await.is_err() {
                     // Underlying TCP stream is dead.
                     drop(e.remove_entry());
+
                     Err(Error::TransportIsDead)
                 } else {
                     #[allow(clippy::map_err_ignore)]
@@ -109,22 +112,29 @@ impl TcpServer {
             let writers = Arc::clone(&writers);
             async move {
                 loop {
-                    let Ok((stream, remote)) = listener.accept().await else {
-                        log::debug!("Closing TCP listener at {local_addr}");
-                        break;
-                    };
-                    if ingress_tx.is_closed() {
-                        break;
+                    tokio::select! {
+                        stream = listener.accept() => {
+                            match stream {
+                                Ok((stream, remote)) => {
+                                    Self::spawn_stream_handler(
+                                        stream,
+                                        local_addr,
+                                        remote,
+                                        ingress_tx.clone(),
+                                        Arc::clone(&writers),
+                                    );
+                                },
+                                Err(_) => {
+                                    break;
+                                }
+                            }
+                        }
+                        () = ingress_tx.closed() => {
+                            break;
+                        }
                     }
-
-                    Self::spawn_stream_handler(
-                        stream,
-                        local_addr,
-                        remote,
-                        ingress_tx.clone(),
-                        Arc::clone(&writers),
-                    );
                 }
+                log::debug!("Closing TCP listener at {local_addr}");
             }
         }));
 
@@ -136,13 +146,13 @@ impl TcpServer {
         mut stream: TcpStream,
         local_addr: SocketAddr,
         remote: SocketAddr,
-        ingress_tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+        ingress_tx: mpsc::Sender<(Request, SocketAddr)>,
         writers: TcpWritersMap,
     ) {
         drop(tokio::spawn(async move {
             let (egress_tx, mut egress_rx) = mpsc::channel::<(
                 Vec<u8>,
-                oneshot::Sender<Result<usize, Error>>,
+                oneshot::Sender<Result<(), Error>>,
             )>(256);
             drop(writers.lock().await.insert(remote, egress_tx));
 
@@ -152,16 +162,15 @@ impl TcpServer {
                 tokio::select! {
                     msg = egress_rx.recv() => {
                         if let Some((msg, tx)) = msg {
-                            let len = msg.len();
                             let res =
                                 writer.write_all(msg.as_slice()).await
-                                    .map(|()| len)
                                     .map_err(Error::from);
 
                             drop(tx.send(res));
                         } else {
-                            log::debug!("Closing TCP {local_addr} <=> \
-                                {remote}");
+                            log::debug!(
+                                "Closing TCP {local_addr} <=> {remote}"
+                            );
 
                             break;
                         }
@@ -186,8 +195,8 @@ impl TcpServer {
                             }
                             Some(Err(_)) => {},
                             None => {
-                                log::debug!("Closing TCP \
-                                    {local_addr} <=> {remote}");
+                                log::debug!("Closing TCP {local_addr} <=> \
+                                    {remote}");
 
                                 break;
                             }
@@ -201,7 +210,8 @@ impl TcpServer {
 
 #[derive(Debug, Clone, Copy)]
 enum StunMessageKind {
-    /// STUN method.
+    /// [STUN Message].
+    ///
     ///
     /// 0                   1                   2                   3
     /// 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -214,7 +224,9 @@ enum StunMessageKind {
     /// |                     Transaction ID (96 bits)                  |
     /// |                                                               |
     /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    Method(usize),
+    ///
+    /// [STUN Message]: https://datatracker.ietf.org/doc/html/rfc5389#section-6
+    Message(usize),
 
     /// TURN [ChannelData][1].
     ///
@@ -245,7 +257,7 @@ impl StunMessageKind {
 
         // If the first two bits are zeroes, then this is a STUN method.
         if first_4_bytes[0] & 0b1100_0000 == 0 {
-            Self::Method(nearest_padded_value_length(size + 20))
+            Self::Message(nearest_padded_value_length(size + 20))
         } else {
             Self::ChannelData(nearest_padded_value_length(size + 4))
         }
@@ -254,7 +266,7 @@ impl StunMessageKind {
     /// Returns the expected length of the message.
     const fn length(&self) -> usize {
         *match self {
-            Self::Method(l) | Self::ChannelData(l) => l,
+            Self::Message(l) | Self::ChannelData(l) => l,
         }
     }
 }
@@ -264,11 +276,16 @@ impl StunMessageKind {
 struct StunTcpCodec {
     /// Current message kind.
     current: Option<StunMessageKind>,
+
+    /// [STUN Message] decoder.
+    ///
+    /// [STUN Message]: https://datatracker.ietf.org/doc/html/rfc5389#section-6
+    msg_decoder: MessageDecoder<Attribute>,
 }
 
 impl Decoder for StunTcpCodec {
+    type Item = Request;
     type Error = Error;
-    type Item = Vec<u8>;
 
     #[allow(clippy::unwrap_in_result, clippy::missing_asserts_for_indexing)]
     fn decode(
@@ -280,13 +297,29 @@ impl Decoder for StunTcpCodec {
                 buf[0], buf[1], buf[2], buf[3],
             ]));
         }
+
         if let Some(pending) = self.current {
             if buf.len() >= pending.length() {
                 #[allow(clippy::unwrap_used)]
-                return Ok(Some(
-                    buf.split_to(self.current.take().unwrap().length())
-                        .to_vec(),
-                ));
+                let current = self.current.take().unwrap();
+                let raw = buf.split_to(current.length());
+
+                let msg = match current {
+                    StunMessageKind::Message(_) => {
+                        let msg = self
+                            .msg_decoder
+                            .decode_from_bytes(&raw)
+                            .map_err(|e| Error::Decode(*e.kind()))?
+                            .map_err(|e| Error::Decode(*e.error().kind()))?;
+
+                        Request::Message(msg)
+                    }
+                    StunMessageKind::ChannelData(_) => {
+                        Request::ChannelData(ChannelData::decode(raw.to_vec())?)
+                    }
+                };
+
+                return Ok(Some(msg));
             }
         }
 

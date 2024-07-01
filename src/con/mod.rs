@@ -7,25 +7,85 @@ use std::io;
 use std::net::SocketAddr;
 
 use async_trait::async_trait;
+use bytecodec::DecodeExt;
+use stun_codec::{Message, MessageDecoder};
+use thiserror::Error;
+use tokio::net::{self, ToSocketAddrs, UdpSocket};
 
-use tokio::{
-    net,
-    net::{ToSocketAddrs, UdpSocket},
+use crate::{
+    attr::{Attribute, PROTO_UDP},
+    chandata,
+    chandata::ChannelData,
+    server::INBOUND_MTU,
 };
 
-use crate::{attr::PROTO_UDP, server::INBOUND_MTU, Error};
-
 pub use tcp::TcpServer;
+
+/// Transport-related error.
+#[derive(Debug, Error, PartialEq)]
+#[allow(variant_size_differences)]
+pub enum Error {
+    /// Tried to use dead transport.
+    #[error("Underlying TCP/UDP transport is dead")]
+    TransportIsDead,
+
+    /// Failed to decode message.
+    #[error("Failed to decode STUN/TURN message: {0:?}")]
+    Decode(bytecodec::ErrorKind),
+
+    /// TURN [ChannelData][1] format error.
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    #[error("{0}")]
+    ChannelData(#[from] chandata::Error),
+
+    /// Error for transport.
+    #[error("{0}")]
+    Io(#[from] IoError),
+}
+
+/// [`io::Error`] wrapper.
+#[derive(Debug, Error)]
+#[error("io error: {0}")]
+pub struct IoError(#[from] pub io::Error);
+
+// Workaround for wanting PartialEq for io::Error.
+impl PartialEq for IoError {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.kind() == other.0.kind()
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Self::Io(IoError(e))
+    }
+}
+
+/// Parsed ingress STUN or TURN message.
+#[derive(Debug)]
+pub enum Request {
+    /// [STUN Message].
+    ///
+    /// [STUN Message]: https://datatracker.ietf.org/doc/html/rfc5389#section-6
+    Message(Message<Attribute>),
+
+    /// [TURN ChannelData][1].
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    ChannelData(ChannelData),
+}
 
 /// Abstracting over transport implementation.
 #[async_trait]
 pub trait Conn {
-    async fn recv_from(&self) -> Result<(Vec<u8>, SocketAddr), Error>;
+    async fn recv_from(&self) -> Result<(Request, SocketAddr), Error>;
+
     async fn send_to(
         &self,
         buf: Vec<u8>,
         target: SocketAddr,
-    ) -> Result<usize, Error>;
+    ) -> Result<(), Error>;
 
     /// Returns the local transport address.
     fn local_addr(&self) -> SocketAddr;
@@ -67,20 +127,33 @@ where
 
 #[async_trait]
 impl Conn for UdpSocket {
-    async fn recv_from(&self) -> Result<(Vec<u8>, SocketAddr), Error> {
+    async fn recv_from(&self) -> Result<(Request, SocketAddr), Error> {
         let mut buf = vec![0u8; INBOUND_MTU];
-        let (len, addr) = self.recv_from(&mut buf).await?;
-        buf.truncate(len);
+        let (n, addr) = self.recv_from(&mut buf).await?;
 
-        Ok((buf, addr))
+        let msg = if ChannelData::is_channel_data(&buf[0..n]) {
+            buf.truncate(n);
+            let data = ChannelData::decode(buf)?;
+
+            Request::ChannelData(data)
+        } else {
+            let msg = MessageDecoder::<Attribute>::new()
+                .decode_from_bytes(&buf[0..n])
+                .map_err(|e| Error::Decode(*e.kind()))?
+                .map_err(|e| Error::Decode(*e.error().kind()))?;
+
+            Request::Message(msg)
+        };
+
+        Ok((msg, addr))
     }
 
     async fn send_to(
         &self,
         data: Vec<u8>,
         target: SocketAddr,
-    ) -> Result<usize, Error> {
-        Ok(self.send_to(&data, target).await?)
+    ) -> Result<(), Error> {
+        Ok(self.send_to(&data, target).await.map(|_| ())?)
     }
 
     fn local_addr(&self) -> SocketAddr {

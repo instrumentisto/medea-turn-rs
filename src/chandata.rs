@@ -1,6 +1,8 @@
 //! [`ChannelData`] message implementation.
 
-use crate::{attr::ChannelNumber, Error};
+use thiserror::Error;
+
+use crate::attr::ChannelNumber;
 
 /// [`ChannelData`] message MUST be padded to a multiple of four bytes in order
 /// to ensure the alignment of subsequent messages.
@@ -22,10 +24,24 @@ const CHANNEL_DATA_LENGTH_SIZE: usize = 2;
 const CHANNEL_DATA_HEADER_SIZE: usize =
     CHANNEL_DATA_LENGTH_SIZE + CHANNEL_DATA_NUMBER_SIZE;
 
+/// TURN [ChannelData][1] format error.
+///
+/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+pub enum Error {
+    /// Failed to handle channel data since channel number is incorrect.
+    #[error("channel number not in [0x4000, 0x7FFF]")]
+    InvalidChannelNumber,
+
+    /// Failed to handle channel data cause of incorrect message length.
+    #[error("channelData length != len(Data)")]
+    BadChannelDataLength,
+}
+
 /// [`ChannelData`] represents the `ChannelData` Message defined in
 /// [RFC 5766](https://www.rfc-editor.org/rfc/rfc5766#section-11.4).
 #[derive(Debug)]
-pub(crate) struct ChannelData {
+pub struct ChannelData {
     /// Parsed [`ChannelData`] [Channel Number][1].
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
@@ -57,7 +73,7 @@ impl ChannelData {
     /// Decodes the given raw message as [`ChannelData`].
     pub(crate) fn decode(mut raw: Vec<u8>) -> Result<Self, Error> {
         if raw.len() < CHANNEL_DATA_HEADER_SIZE {
-            return Err(Error::UnexpectedEof);
+            return Err(Error::BadChannelDataLength);
         }
 
         let number = u16::from_be_bytes([raw[0], raw[1]]);
@@ -93,26 +109,25 @@ impl ChannelData {
     /// Encodes the provided [`ChannelData`] payload and channel number to
     /// bytes.
     pub(crate) fn encode(
-        mut data: Vec<u8>,
+        payload: &[u8],
         chan_num: u16,
     ) -> Result<Vec<u8>, Error> {
+        let length = CHANNEL_DATA_HEADER_SIZE + payload.len();
+        let padded_length = nearest_padded_value_length(length);
+
         #[allow(clippy::map_err_ignore)]
-        let len = u16::try_from(data.len())
+        let len = u16::try_from(payload.len())
             .map_err(|_| Error::BadChannelDataLength)?;
-        for i in len.to_be_bytes().into_iter().rev() {
-            data.insert(0, i);
-        }
-        for i in chan_num.to_be_bytes().into_iter().rev() {
-            data.insert(0, i);
-        }
 
-        let padded = nearest_padded_value_length(data.len());
-        let bytes_to_add = padded - data.len();
-        if bytes_to_add > 0 {
-            data.extend_from_slice(&vec![0; bytes_to_add]);
-        }
+        let mut encoded = vec![0u8; padded_length];
 
-        Ok(data)
+        encoded[..CHANNEL_DATA_NUMBER_SIZE]
+            .copy_from_slice(&chan_num.to_be_bytes());
+        encoded[CHANNEL_DATA_NUMBER_SIZE..CHANNEL_DATA_HEADER_SIZE]
+            .copy_from_slice(&len.to_be_bytes());
+        encoded[CHANNEL_DATA_HEADER_SIZE..length].copy_from_slice(payload);
+
+        Ok(encoded)
     }
 
     /// Returns [`ChannelData`] payload.
@@ -137,8 +152,7 @@ mod chandata_test {
     #[test]
     fn test_channel_data_encode() {
         let encoded =
-            ChannelData::encode(vec![1, 2, 3, 4], ChannelNumber::MIN + 1)
-                .unwrap();
+            ChannelData::encode(&[1, 2, 3, 4], ChannelNumber::MIN + 1).unwrap();
         let decoded = ChannelData::decode(encoded.clone()).unwrap();
 
         assert!(
@@ -186,8 +200,8 @@ mod chandata_test {
         ];
 
         for (name, a, b, r) in tests {
-            let v = ChannelData::encode(a.data.clone(), a.number)
-                == ChannelData::encode(b.data.clone(), b.number);
+            let v = ChannelData::encode(&a.data, a.number)
+                == ChannelData::encode(&b.data, b.number);
             assert_eq!(v, r, "unexpected: ({name}) {r} != {r}");
         }
     }
@@ -195,7 +209,7 @@ mod chandata_test {
     #[test]
     fn test_channel_data_decode() {
         let tests = vec![
-            ("small", vec![1, 2, 3], Error::UnexpectedEof),
+            ("small", vec![1, 2, 3], Error::BadChannelDataLength),
             (
                 "zeroes",
                 vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -279,8 +293,7 @@ mod chandata_test {
         for packet in data {
             let m = ChannelData::decode(packet.clone()).unwrap();
 
-            let encoded =
-                ChannelData::encode(m.data.clone(), m.number).unwrap();
+            let encoded = ChannelData::encode(&m.data, m.number).unwrap();
             let decoded = ChannelData::decode(encoded.clone()).unwrap();
 
             assert_eq!(m.data, decoded.data, "should be equal");

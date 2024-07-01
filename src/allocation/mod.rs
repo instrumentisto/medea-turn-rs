@@ -26,11 +26,7 @@ use stun_codec::{
 };
 use tokio::{
     net::UdpSocket,
-    sync::{
-        mpsc,
-        oneshot::{self, Sender},
-        Mutex,
-    },
+    sync::{mpsc, Mutex},
     time::{sleep, Duration, Instant},
 };
 
@@ -38,6 +34,7 @@ use crate::{
     allocation::permission::PERMISSION_LIFETIME,
     attr::{Attribute, Data, Username, XorPeerAddress},
     chandata::ChannelData,
+    con,
     con::Conn,
     server::INBOUND_MTU,
     Error,
@@ -103,9 +100,6 @@ impl fmt::Display for FiveTuple {
 ///
 /// [Allocation]:https://datatracker.ietf.org/doc/html/rfc5766#section-5
 pub(crate) struct Allocation {
-    /// [`Conn`] used to create this [`Allocation`].
-    turn_socket: Arc<dyn Conn + Send + Sync>,
-
     /// Relay socket address.
     relay_addr: SocketAddr,
 
@@ -124,18 +118,12 @@ pub(crate) struct Allocation {
     /// This [`Allocation`] [`ChannelBind`]ings.
     channel_bindings: Arc<Mutex<HashMap<u16, ChannelBind>>>,
 
-    /// All [`Allocation`]s storage.
-    allocations: Option<AllocationMap>,
-
     /// Channel to the internal loop used to update lifetime or drop
     /// allocation.
-    reset_tx: SyncMutex<Option<mpsc::Sender<Duration>>>,
+    refresh_tx: SyncMutex<Option<mpsc::Sender<Duration>>>,
 
     /// Total number of relayed bytes.
     relayed_bytes: AtomicUsize,
-
-    /// Channel to the packet handler loop used to stop it.
-    drop_tx: Option<Sender<u32>>,
 
     /// Injected into allocations to notify when allocation is closed.
     alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
@@ -143,28 +131,39 @@ pub(crate) struct Allocation {
 
 impl Allocation {
     /// Creates a new [`Allocation`].
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         turn_socket: Arc<dyn Conn + Send + Sync>,
         relay_socket: Arc<UdpSocket>,
         relay_addr: SocketAddr,
         five_tuple: FiveTuple,
+        lifetime: Duration,
+        allocations: AllocationMap,
         username: Username,
         alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
     ) -> Self {
-        Self {
-            turn_socket,
+        let (refresh_tx, refresh_rx) = mpsc::channel(8);
+
+        let this = Self {
             relay_addr,
             relay_socket,
             five_tuple,
             username,
             permissions: Arc::new(Mutex::new(HashMap::new())),
             channel_bindings: Arc::new(Mutex::new(HashMap::new())),
-            allocations: None,
-            reset_tx: SyncMutex::new(None),
+            refresh_tx: SyncMutex::new(Some(refresh_tx)),
             relayed_bytes: AtomicUsize::default(),
-            drop_tx: None,
             alloc_close_notify,
-        }
+        };
+
+        this.spawn_relay_handler(
+            refresh_rx,
+            lifetime,
+            allocations,
+            turn_socket,
+        );
+
+        this
     }
 
     /// Send the given data via associated relay socket.
@@ -179,7 +178,7 @@ impl Allocation {
 
                 Ok(())
             }
-            Err(err) => Err(Error::from(err)),
+            Err(err) => Err(Error::from(con::Error::from(err))),
         }
     }
 
@@ -240,8 +239,12 @@ impl Allocation {
             // Channel binds also refresh permissions.
             self.add_permission(cb.peer().ip()).await;
         } else {
-            let mut bind = ChannelBind::new(number, peer_addr);
-            bind.start(Arc::clone(&self.channel_bindings), lifetime);
+            let bind = ChannelBind::new(
+                number,
+                peer_addr,
+                Arc::clone(&self.channel_bindings),
+                lifetime,
+            );
 
             drop(channel_bindings.insert(number, bind));
 
@@ -274,7 +277,7 @@ impl Allocation {
     /// Closes the [`Allocation`].
     pub(crate) async fn close(&self) -> Result<(), Error> {
         #[allow(clippy::unwrap_used)]
-        if self.reset_tx.lock().unwrap().take().is_none() {
+        if self.refresh_tx.lock().unwrap().take().is_none() {
             return Err(Error::Closed);
         }
 
@@ -302,51 +305,10 @@ impl Allocation {
         Ok(())
     }
 
-    /// Starts the internal lifetime watching loop.
-    pub(crate) fn start(&self, lifetime: Duration) {
-        let (reset_tx, mut reset_rx) = mpsc::channel(1);
-        #[allow(clippy::unwrap_used)]
-        drop(self.reset_tx.lock().unwrap().replace(reset_tx));
-
-        let allocations = self.allocations.clone();
-        let five_tuple = self.five_tuple;
-
-        drop(tokio::spawn(async move {
-            let timer = sleep(lifetime);
-            tokio::pin!(timer);
-
-            loop {
-                tokio::select! {
-                    () = &mut timer => {
-                        if let Some(allocs) = &allocations{
-                            #[allow(clippy::unwrap_used)]
-                            let alloc = allocs
-                                .lock()
-                                .unwrap()
-                                .remove(&five_tuple);
-
-                            if let Some(a) = alloc {
-                                drop(a.close().await);
-                            }
-                        }
-                        break;
-                    },
-                    result = reset_rx.recv() => {
-                        if let Some(d) = result {
-                            timer.as_mut().reset(Instant::now() + d);
-                        } else {
-                            break;
-                        }
-                    },
-                }
-            }
-        }));
-    }
-
     /// Updates the allocations lifetime.
     pub(crate) async fn refresh(&self, lifetime: Duration) {
         #[allow(clippy::unwrap_used)]
-        let reset_tx = self.reset_tx.lock().unwrap().clone();
+        let reset_tx = self.refresh_tx.lock().unwrap().clone();
 
         if let Some(tx) = reset_tx {
             _ = tx.send(lifetime).await;
@@ -372,70 +334,84 @@ impl Allocation {
     ///  transport address of the received UDP datagram.  The Data indication
     ///  is then sent on the 5-tuple associated with the allocation.
     #[allow(clippy::too_many_lines)]
-    fn packet_handler(&mut self) {
+    fn spawn_relay_handler(
+        &self,
+        mut refresh_rx: mpsc::Receiver<Duration>,
+        lifetime: Duration,
+        allocations: AllocationMap,
+        turn_socket: Arc<dyn Conn + Send + Sync>,
+    ) {
         let five_tuple = self.five_tuple;
         let relay_addr = self.relay_addr;
         let relay_socket = Arc::clone(&self.relay_socket);
-        let turn_socket = Arc::clone(&self.turn_socket);
-        let allocations = self.allocations.clone();
         let channel_bindings = Arc::clone(&self.channel_bindings);
         let permissions = Arc::clone(&self.permissions);
-        let (drop_tx, drop_rx) = oneshot::channel::<u32>();
-        self.drop_tx = Some(drop_tx);
 
         drop(tokio::spawn(async move {
+            log::trace!("listening on relay addr: {:?}", relay_addr);
+
+            let expired = sleep(lifetime);
+            tokio::pin!(expired);
             let mut buffer = vec![0u8; INBOUND_MTU];
 
-            tokio::pin!(drop_rx);
             loop {
-                let (n, src_addr) = tokio::select! {
+                let (data, src_addr) = tokio::select! {
                     result = relay_socket.recv_from(&mut buffer) => {
-                        if let Ok((data, src_addr)) = result {
-                            (data, src_addr)
+                        if let Ok((n, src_addr)) = result {
+                            (&buffer[..n], src_addr)
                         } else {
-                            if let Some(allocs) = &allocations {
-                                #[allow(clippy::unwrap_used)]
-                                drop(
-                                    allocs.lock().unwrap().remove(&five_tuple)
-                                );
-                            }
+                            #[allow(clippy::unwrap_used)]
+                            drop(
+                                allocations.lock().unwrap().remove
+                                (&five_tuple)
+                            );
                             break;
                         }
                     }
-                    _ = drop_rx.as_mut() => {
-                        log::trace!("allocation has stopped, \
-                            stop packet_handler. five_tuple: {:?}",
-                            five_tuple);
+                    () = &mut expired => {
                         break;
-                    }
+                    },
+                    refresh = refresh_rx.recv() => {
+                        match refresh {
+                            Some(lf) => {
+                                expired.as_mut().reset(Instant::now() + lf);
+                                continue;
+                            }
+                            None => {
+                                break;
+                            }
+                        }
+                    },
                 };
 
-                let cb_number = {
-                    let mut cb_number = None;
-                    #[allow(
-                        clippy::iter_over_hash_type,
-                        clippy::significant_drop_in_scrutinee
-                    )]
-                    for cb in channel_bindings.lock().await.values() {
-                        if cb.peer() == src_addr {
-                            cb_number = Some(cb.num());
-                            break;
-                        }
-                    }
-                    cb_number
-                };
+                #[allow(clippy::significant_drop_in_scrutinee)]
+                let cb_number = channel_bindings
+                    .lock()
+                    .await
+                    .iter()
+                    .find(|(_, cb)| cb.peer() == src_addr)
+                    .map(|(cn, _)| *cn);
 
                 if let Some(number) = cb_number {
-                    match ChannelData::encode(buffer[..n].to_vec(), number) {
+                    match ChannelData::encode(data, number) {
                         Ok(data) => {
                             if let Err(err) = turn_socket
                                 .send_to(data, five_tuple.src_addr)
                                 .await
                             {
-                                log::error!(
-                                    "Failed to send ChannelData from \
-                                    allocation {src_addr}: {err}",
-                                );
+                                match err {
+                                    con::Error::TransportIsDead => {
+                                        break;
+                                    }
+                                    con::Error::Decode(_)
+                                    | con::Error::ChannelData(_)
+                                    | con::Error::Io(_) => {
+                                        log::error!(
+                                            "Failed to send ChannelData from \
+                                            allocation {src_addr}: {err}",
+                                        );
+                                    }
+                                }
                             }
                         }
                         Err(err) => {
@@ -446,13 +422,12 @@ impl Allocation {
                         }
                     };
                 } else {
-                    let exist =
-                        permissions.lock().await.get(&src_addr.ip()).is_some();
+                    let has_permission =
+                        permissions.lock().await.contains_key(&src_addr.ip());
 
-                    if exist {
+                    if has_permission {
                         log::trace!(
-                            "relaying message from {} to client at {}",
-                            src_addr,
+                            "relaying message from {src_addr} to client at {}",
                             five_tuple.src_addr
                         );
 
@@ -462,7 +437,7 @@ impl Allocation {
                             TransactionId::new(random()),
                         );
                         msg.add_attribute(XorPeerAddress::new(src_addr));
-                        let Ok(data) = Data::new(buffer[..n].to_vec()) else {
+                        let Ok(data) = Data::new(data.to_vec()) else {
                             log::error!("DataIndication is too long");
                             continue;
                         };
@@ -476,9 +451,7 @@ impl Allocation {
                                 {
                                     log::error!(
                                         "Failed to send DataIndication from \
-                                        allocation {} {}",
-                                        src_addr,
-                                        err
+                                        allocation {src_addr} {err}",
                                     );
                                 }
                             }
@@ -488,14 +461,23 @@ impl Allocation {
                         }
                     } else {
                         log::info!(
-                            "No Permission or Channel exists for {} on \
-                                allocation {}",
-                            src_addr,
-                            relay_addr
+                            "No Permission or Channel exists for {src_addr} on \
+                                allocation {relay_addr}",
                         );
                     }
                 }
             }
+
+            #[allow(clippy::unwrap_used)]
+            let alloc = allocations.lock().unwrap().remove(&five_tuple);
+
+            if let Some(a) = alloc {
+                drop(a.close().await);
+            }
+
+            log::trace!(
+                "{five_tuple:?} allocation stopped, stop packet_handler"
+            );
         }));
     }
 }
@@ -533,6 +515,8 @@ mod allocation_test {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
+            DEFAULT_LIFETIME,
+            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -565,6 +549,8 @@ mod allocation_test {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
+            DEFAULT_LIFETIME,
+            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -586,6 +572,8 @@ mod allocation_test {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
+            DEFAULT_LIFETIME,
+            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -618,6 +606,8 @@ mod allocation_test {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
+            DEFAULT_LIFETIME,
+            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -649,12 +639,11 @@ mod allocation_test {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
+            DEFAULT_LIFETIME,
+            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
-
-        // add mock lifetimeTimer
-        a.start(DEFAULT_LIFETIME);
 
         // add channel
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();

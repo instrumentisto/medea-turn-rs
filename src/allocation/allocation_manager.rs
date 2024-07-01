@@ -131,27 +131,26 @@ impl Manager {
             .relay_allocator
             .allocate_conn(use_ipv4, requested_port)
             .await?;
-        let mut a = Allocation::new(
+        let alloc = Arc::new(Allocation::new(
             turn_socket,
             relay_socket,
             relay_addr,
             five_tuple,
+            lifetime,
+            Arc::clone(&self.allocations),
             username,
             self.alloc_close_notify.clone(),
-        );
-        a.allocations = Some(Arc::clone(&self.allocations));
+        ));
 
-        log::trace!("listening on relay addr: {:?}", a.relay_addr);
-        a.start(lifetime);
-        a.packet_handler();
-
-        let a = Arc::new(a);
         #[allow(clippy::unwrap_used)]
         drop(
-            self.allocations.lock().unwrap().insert(five_tuple, Arc::clone(&a)),
+            self.allocations
+                .lock()
+                .unwrap()
+                .insert(five_tuple, Arc::clone(&alloc)),
         );
 
-        Ok(a)
+        Ok(alloc)
     }
 
     /// Removes an [`Allocation`].

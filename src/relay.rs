@@ -13,7 +13,7 @@ use crate::{con, Error};
 
 /// [`RelayAllocator`] is used to generate a Relay Address when creating an
 /// allocation.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RelayAllocator {
     /// `relay_address` is the IP returned to the user when the relay is
     /// created.
@@ -64,7 +64,8 @@ impl RelayAllocator {
                     continue;
                 };
 
-                let mut relay_addr = conn.local_addr()?;
+                let mut relay_addr =
+                    conn.local_addr().map_err(con::Error::from)?;
                 relay_addr.set_ip(self.relay_address);
                 return Ok((Arc::new(conn), relay_addr));
             }
@@ -76,8 +77,10 @@ impl RelayAllocator {
                 &format!("{}:{}", self.address, requested_port),
             )
             .await?;
-            let conn = Arc::new(UdpSocket::bind(addr).await?);
-            let mut relay_addr = conn.local_addr()?;
+            let conn = Arc::new(
+                UdpSocket::bind(addr).await.map_err(con::Error::from)?,
+            );
+            let mut relay_addr = conn.local_addr().map_err(con::Error::from)?;
             relay_addr.set_ip(self.relay_address);
 
             Ok((conn, relay_addr))
