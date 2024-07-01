@@ -24,10 +24,7 @@ use stun_codec::{
     rfc8656::errors::{AddressFamilyNotSupported, PeerAddressFamilyMismatch},
     Attribute as _, Message, MessageClass, MessageEncoder, TransactionId,
 };
-use tokio::{
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use tokio::time::{Duration, Instant};
 
 use crate::{
     allocation::{FiveTuple, Manager},
@@ -61,8 +58,8 @@ pub(crate) async fn handle_message(
     five_tuple: FiveTuple,
     server_realm: &str,
     channel_bind_lifetime: Duration,
-    allocs: &Manager,
-    nonces: &Arc<Mutex<HashMap<String, Instant>>>,
+    allocs: &mut Manager,
+    nonces: &mut HashMap<String, Instant>,
     auth_handler: &Arc<dyn AuthHandler + Send + Sync>,
 ) -> Result<(), Error> {
     match msg {
@@ -177,7 +174,7 @@ async fn handle_data_packet(
 async fn handle_allocate_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Conn + Send + Sync>,
-    allocs: &Manager,
+    allocs: &mut Manager,
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
@@ -190,7 +187,6 @@ async fn handle_allocate_request(
     //    some procedure outside the scope of this document.
 
     let mut requested_port = 0;
-    let mut reservation_token: Option<u64> = None;
     let mut use_ipv4 = true;
 
     // 2. The server checks if the 5-tuple is currently in use by an existing
@@ -326,7 +322,6 @@ async fn handle_allocate_request(
         }
 
         requested_port = random_port;
-        reservation_token = Some(random());
     }
 
     // 7. At any point, the server MAY choose to reject the request with a 486
@@ -378,12 +373,6 @@ async fn handle_allocate_request(
     //     and port (from the 5-tuple).
 
     let msg = {
-        if let Some(token) = reservation_token {
-            allocs
-                .create_reservation(token, allocation.relay_addr().port())
-                .await;
-        }
-
         let mut msg = Message::new(
             MessageClass::SuccessResponse,
             ALLOCATE,
@@ -396,10 +385,6 @@ async fn handle_allocate_request(
                 .map_err(|e| Error::Encode(*e.kind()))?,
         );
         msg.add_attribute(XorMappedAddress::new(five_tuple.src_addr));
-
-        if let Some(token) = reservation_token {
-            msg.add_attribute(ReservationToken::new(token));
-        }
 
         let integrity = MessageIntegrity::new_long_term_credential(
             &msg, &uname, &realm, &pass,
@@ -418,7 +403,7 @@ async fn authenticate_request(
     msg: &Message<Attribute>,
     auth_handler: &Arc<dyn AuthHandler + Send + Sync>,
     conn: &Arc<dyn Conn + Send + Sync>,
-    nonces: &Arc<Mutex<HashMap<String, Instant>>>,
+    nonces: &mut HashMap<String, Instant>,
     five_tuple: FiveTuple,
     realm: &str,
 ) -> Result<Option<(Username, Realm, Box<str>)>, Error> {
@@ -440,11 +425,9 @@ async fn authenticate_request(
         return Err(Error::AttributeNotFound);
     };
 
-    let to_be_deleted = {
+    let stale_nonce = {
         // Assert Nonce exists and is not expired
-        let mut nonces = nonces.lock().await;
-
-        let to_be_deleted = nonces.get(nonce_attr.value()).map_or(
+        let stale_nonce = nonces.get(nonce_attr.value()).map_or(
             true,
             |nonce_creation_time| {
                 Instant::now()
@@ -454,13 +437,13 @@ async fn authenticate_request(
             },
         );
 
-        if to_be_deleted {
+        if stale_nonce {
             _ = nonces.remove(nonce_attr.value());
         }
-        to_be_deleted
+        stale_nonce
     };
 
-    if to_be_deleted {
+    if stale_nonce {
         respond_with_nonce(
             msg,
             ErrorCode::from(StaleNonce),
@@ -529,7 +512,7 @@ async fn handle_binding_request(
 async fn handle_refresh_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Conn + Send + Sync>,
-    allocs: &Manager,
+    allocs: &mut Manager,
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
@@ -778,7 +761,7 @@ async fn respond_with_nonce(
     conn: &Arc<dyn Conn + Send + Sync>,
     realm: &str,
     five_tuple: FiveTuple,
-    nonces: &Arc<Mutex<HashMap<String, Instant>>>,
+    nonces: &mut HashMap<String, Instant>,
 ) -> Result<(), Error> {
     let nonce: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -787,8 +770,8 @@ async fn respond_with_nonce(
         .collect();
 
     {
-        let mut nonces = nonces.lock().await;
         if nonces.contains_key(&nonce) {
+            // TODO: wtf
             // Nonce has already been taken
             return Err(Error::RequestReplay);
         }

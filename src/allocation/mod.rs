@@ -45,8 +45,7 @@ use self::{channel_bind::ChannelBind, permission::Permission};
 pub(crate) use allocation_manager::{Manager, ManagerConfig};
 
 /// [`Allocation`]s storage.
-pub(crate) type AllocationMap =
-    Arc<SyncMutex<HashMap<FiveTuple, Arc<Allocation>>>>;
+pub(crate) type AllocationMap = HashMap<FiveTuple, Arc<Allocation>>;
 
 /// Information about an allocation.
 #[derive(Debug, Clone)]
@@ -138,13 +137,12 @@ impl Allocation {
         relay_addr: SocketAddr,
         five_tuple: FiveTuple,
         lifetime: Duration,
-        allocations: AllocationMap,
         username: Username,
         alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
-    ) -> Self {
+    ) -> Arc<Self> {
         let (refresh_tx, refresh_rx) = mpsc::channel(8);
 
-        let this = Self {
+        let this = Arc::new(Self {
             relay_addr,
             relay_socket,
             five_tuple,
@@ -154,12 +152,11 @@ impl Allocation {
             refresh_tx: SyncMutex::new(Some(refresh_tx)),
             relayed_bytes: AtomicUsize::default(),
             alloc_close_notify,
-        };
+        });
 
-        this.spawn_relay_handler(
+        Arc::clone(&this).spawn_relay_handler(
             refresh_rx,
             lifetime,
-            allocations,
             turn_socket,
         );
 
@@ -275,10 +272,10 @@ impl Allocation {
     }
 
     /// Closes the [`Allocation`].
-    pub(crate) async fn close(&self) -> Result<(), Error> {
+    pub(crate) async fn close(&self) {
         #[allow(clippy::unwrap_used)]
         if self.refresh_tx.lock().unwrap().take().is_none() {
-            return Err(Error::Closed);
+            return;
         }
 
         drop(mem::take(&mut *self.permissions.lock().await));
@@ -286,7 +283,7 @@ impl Allocation {
 
         log::trace!("allocation with {} closed!", self.five_tuple);
 
-        drop(self.relay_socket.close().await);
+        self.relay_socket.close().await;
 
         if let Some(notify_tx) = &self.alloc_close_notify {
             drop(
@@ -301,8 +298,6 @@ impl Allocation {
                     .await,
             );
         }
-
-        Ok(())
     }
 
     /// Updates the allocations lifetime.
@@ -335,20 +330,13 @@ impl Allocation {
     ///  is then sent on the 5-tuple associated with the allocation.
     #[allow(clippy::too_many_lines)]
     fn spawn_relay_handler(
-        &self,
+        self: Arc<Self>,
         mut refresh_rx: mpsc::Receiver<Duration>,
         lifetime: Duration,
-        allocations: AllocationMap,
         turn_socket: Arc<dyn Conn + Send + Sync>,
     ) {
-        let five_tuple = self.five_tuple;
-        let relay_addr = self.relay_addr;
-        let relay_socket = Arc::clone(&self.relay_socket);
-        let channel_bindings = Arc::clone(&self.channel_bindings);
-        let permissions = Arc::clone(&self.permissions);
-
         drop(tokio::spawn(async move {
-            log::trace!("listening on relay addr: {:?}", relay_addr);
+            log::trace!("listening on relay addr: {:?}", self.relay_addr);
 
             let expired = sleep(lifetime);
             tokio::pin!(expired);
@@ -356,15 +344,10 @@ impl Allocation {
 
             loop {
                 let (data, src_addr) = tokio::select! {
-                    result = relay_socket.recv_from(&mut buffer) => {
+                    result = self.relay_socket.recv_from(&mut buffer) => {
                         if let Ok((n, src_addr)) = result {
                             (&buffer[..n], src_addr)
                         } else {
-                            #[allow(clippy::unwrap_used)]
-                            drop(
-                                allocations.lock().unwrap().remove
-                                (&five_tuple)
-                            );
                             break;
                         }
                     }
@@ -374,6 +357,9 @@ impl Allocation {
                     refresh = refresh_rx.recv() => {
                         match refresh {
                             Some(lf) => {
+                                if lf == Duration::ZERO {
+                                    break;
+                                }
                                 expired.as_mut().reset(Instant::now() + lf);
                                 continue;
                             }
@@ -385,7 +371,8 @@ impl Allocation {
                 };
 
                 #[allow(clippy::significant_drop_in_scrutinee)]
-                let cb_number = channel_bindings
+                let cb_number = self
+                    .channel_bindings
                     .lock()
                     .await
                     .iter()
@@ -396,7 +383,7 @@ impl Allocation {
                     match ChannelData::encode(data, number) {
                         Ok(data) => {
                             if let Err(err) = turn_socket
-                                .send_to(data, five_tuple.src_addr)
+                                .send_to(data, self.five_tuple.src_addr)
                                 .await
                             {
                                 match err {
@@ -422,13 +409,16 @@ impl Allocation {
                         }
                     };
                 } else {
-                    let has_permission =
-                        permissions.lock().await.contains_key(&src_addr.ip());
+                    let has_permission = self
+                        .permissions
+                        .lock()
+                        .await
+                        .contains_key(&src_addr.ip());
 
                     if has_permission {
                         log::trace!(
                             "relaying message from {src_addr} to client at {}",
-                            five_tuple.src_addr
+                            self.five_tuple.src_addr
                         );
 
                         let mut msg: Message<Attribute> = Message::new(
@@ -446,7 +436,7 @@ impl Allocation {
                         match MessageEncoder::new().encode_into_bytes(msg) {
                             Ok(encoded) => {
                                 if let Err(err) = turn_socket
-                                    .send_to(encoded, five_tuple.src_addr)
+                                    .send_to(encoded, self.five_tuple.src_addr)
                                     .await
                                 {
                                     log::error!(
@@ -462,21 +452,17 @@ impl Allocation {
                     } else {
                         log::info!(
                             "No Permission or Channel exists for {src_addr} on \
-                                allocation {relay_addr}",
+                                allocation {}", self.relay_addr
                         );
                     }
                 }
             }
 
-            #[allow(clippy::unwrap_used)]
-            let alloc = allocations.lock().unwrap().remove(&five_tuple);
-
-            if let Some(a) = alloc {
-                drop(a.close().await);
-            }
+            self.close().await;
 
             log::trace!(
-                "{five_tuple:?} allocation stopped, stop packet_handler"
+                "{:?} allocation stopped, stop packet_handler",
+                self.five_tuple
             );
         }));
     }
@@ -516,7 +502,7 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            AllocationMap::default(),
+            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -550,7 +536,7 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            AllocationMap::default(),
+            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -573,7 +559,7 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            AllocationMap::default(),
+            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -607,7 +593,7 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            AllocationMap::default(),
+            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -640,7 +626,7 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            AllocationMap::default(),
+            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );

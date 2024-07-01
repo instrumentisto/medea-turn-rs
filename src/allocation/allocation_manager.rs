@@ -5,15 +5,12 @@
 use std::{
     collections::HashMap,
     mem,
-    sync::{atomic::Ordering, Arc, Mutex as SyncMutex},
+    sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 
 use futures::future;
-use tokio::{
-    sync::{mpsc, Mutex},
-    time::sleep,
-};
+use tokio::sync::mpsc;
 
 use crate::{
     allocation::{Allocation, AllocationMap},
@@ -37,11 +34,6 @@ pub(crate) struct Manager {
     /// [`Allocation`]s storage.
     allocations: AllocationMap,
 
-    /// [Reservation][1]s storage.
-    ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
-    reservations: Arc<Mutex<HashMap<u64, u16>>>,
-
     /// Relay connections allocator.
     relay_allocator: RelayAllocator,
 
@@ -53,8 +45,7 @@ impl Manager {
     /// Creates a new [`Manager`].
     pub(crate) fn new(config: ManagerConfig) -> Self {
         Self {
-            allocations: Arc::new(SyncMutex::new(HashMap::new())),
-            reservations: Arc::new(Mutex::new(HashMap::new())),
+            allocations: AllocationMap::default(),
             relay_allocator: config.relay_addr_generator,
             alloc_close_notify: config.alloc_close_notify,
         }
@@ -73,7 +64,7 @@ impl Manager {
             clippy::iter_over_hash_type,
             clippy::significant_drop_in_scrutinee
         )]
-        for (five_tuple, alloc) in self.allocations.lock().unwrap().iter() {
+        for (five_tuple, alloc) in &self.allocations {
             #[allow(clippy::unwrap_used)]
             if five_tuples.is_none()
                 || five_tuples.as_ref().unwrap().contains(five_tuple)
@@ -94,8 +85,7 @@ impl Manager {
 
     /// Fetches the [`Allocation`] matching the passed [`FiveTuple`].
     pub(crate) fn has_alloc(&self, five_tuple: &FiveTuple) -> bool {
-        #[allow(clippy::unwrap_used)]
-        self.allocations.lock().unwrap().get(five_tuple).is_some()
+        self.allocations.contains_key(five_tuple)
     }
 
     /// Fetches the [`Allocation`] matching the passed [`FiveTuple`].
@@ -104,14 +94,13 @@ impl Manager {
         &self,
         five_tuple: &FiveTuple,
     ) -> Option<Arc<Allocation>> {
-        #[allow(clippy::unwrap_used)]
-        self.allocations.lock().unwrap().get(five_tuple).cloned()
+        self.allocations.get(five_tuple).cloned()
     }
 
     /// Creates a new [`Allocation`] and starts relaying.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn create_allocation(
-        &self,
+        &mut self,
         five_tuple: FiveTuple,
         turn_socket: Arc<dyn Conn + Send + Sync>,
         requested_port: u16,
@@ -131,50 +120,35 @@ impl Manager {
             .relay_allocator
             .allocate_conn(use_ipv4, requested_port)
             .await?;
-        let alloc = Arc::new(Allocation::new(
+        let alloc = Allocation::new(
             turn_socket,
             relay_socket,
             relay_addr,
             five_tuple,
             lifetime,
-            Arc::clone(&self.allocations),
             username,
             self.alloc_close_notify.clone(),
-        ));
-
-        #[allow(clippy::unwrap_used)]
-        drop(
-            self.allocations
-                .lock()
-                .unwrap()
-                .insert(five_tuple, Arc::clone(&alloc)),
         );
+
+        drop(self.allocations.insert(five_tuple, Arc::clone(&alloc)));
 
         Ok(alloc)
     }
 
     /// Removes an [`Allocation`].
-    pub(crate) async fn delete_allocation(&self, five_tuple: &FiveTuple) {
-        #[allow(clippy::unwrap_used)]
-        let allocation = self.allocations.lock().unwrap().remove(five_tuple);
-
-        if let Some(a) = allocation {
-            if let Err(err) = a.close().await {
-                log::error!("Failed to close allocation: {}", err);
-            }
+    pub(crate) async fn delete_allocation(&mut self, five_tuple: &FiveTuple) {
+        if let Some(a) = self.allocations.remove(five_tuple) {
+            a.close().await;
         }
     }
 
     /// Deletes the [`Allocation`]s according to the specified username `name`.
-    pub(crate) async fn delete_allocations_by_username(&self, name: &str) {
+    pub(crate) async fn delete_allocations_by_username(&mut self, name: &str) {
         let to_delete = {
-            #[allow(clippy::unwrap_used)]
-            let mut allocations = self.allocations.lock().unwrap();
-
             let mut to_delete = Vec::new();
 
             // TODO(logist322): Use `.drain_filter()` once stabilized.
-            allocations.retain(|_, allocation| {
+            self.allocations.retain(|_, allocation| {
                 let match_name = allocation.username.name() == name;
 
                 if match_name {
@@ -188,31 +162,11 @@ impl Manager {
         };
 
         drop(
-            future::join_all(to_delete.iter().map(|a| async move {
-                if let Err(err) = a.close().await {
-                    log::error!("Failed to close allocation: {}", err);
-                }
+            future::join_all(to_delete.into_iter().map(|a| async move {
+                a.close().await;
             }))
             .await,
         );
-    }
-
-    /// Stores the reservation for the token+port.
-    pub(crate) async fn create_reservation(&self, token: u64, port: u16) {
-        let reservations = Arc::clone(&self.reservations);
-
-        drop(tokio::spawn(async move {
-            let liftime = sleep(Duration::from_secs(30));
-            tokio::pin!(liftime);
-
-            tokio::select! {
-                () = &mut liftime => {
-                    _ = reservations.lock().await.remove(&token);
-                },
-            }
-        }));
-
-        _ = self.reservations.lock().await.insert(token, port);
     }
 
     /// Returns a random un-allocated udp4 port.
@@ -222,16 +176,13 @@ impl Manager {
     }
 
     /// Closes this [`Manager`] and closes all [`Allocation`]s it manages.
-    pub(crate) async fn close(&self) -> Result<(), Error> {
-        #[allow(clippy::unwrap_used)]
-        let allocations = mem::take(&mut *self.allocations.lock().unwrap());
-
-        #[allow(clippy::iter_over_hash_type)]
-        for a in allocations.values() {
-            a.close().await?;
-        }
-
-        Ok(())
+    pub(crate) async fn close(&mut self) {
+        drop(
+            future::join_all(
+                mem::take(&mut self.allocations).values().map(|a| a.close()),
+            )
+            .await,
+        );
     }
 }
 

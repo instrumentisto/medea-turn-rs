@@ -52,13 +52,12 @@ impl Server {
                 config.channel_bind_lifetime
             };
 
-        let nonces = Arc::new(Mutex::new(HashMap::new()));
         for conn in config.connections {
-            let nonces = Arc::clone(&nonces);
+            let mut nonces = HashMap::new();
             let auth_handler = Arc::clone(&config.auth_handler);
             let realm = config.realm.clone();
             let mut handle_rx = command_tx.subscribe();
-            let allocation_manager = Manager::new(ManagerConfig {
+            let mut allocation_manager = Manager::new(ManagerConfig {
                 relay_addr_generator: config.relay_addr_generator.clone(),
                 alloc_close_notify: config.alloc_close_notify.clone(),
             });
@@ -133,8 +132,8 @@ impl Server {
                         },
                         realm.as_str(),
                         channel_bind_lifetime,
-                        &allocation_manager,
-                        &nonces,
+                        &mut allocation_manager,
+                        &mut nonces,
                         &auth_handler,
                     );
 
@@ -143,8 +142,8 @@ impl Server {
                     }
                 }
 
-                drop(allocation_manager.close().await);
-                drop(conn.close().await);
+                allocation_manager.close().await;
+                conn.close().await;
             }));
         }
 

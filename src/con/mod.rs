@@ -96,7 +96,7 @@ pub trait Conn {
     fn proto(&self) -> u8;
 
     /// Closes the underlying transport.
-    async fn close(&self) -> Result<(), Error>;
+    async fn close(&self);
 }
 
 /// Performs a DNS resolution.
@@ -165,9 +165,7 @@ impl Conn for UdpSocket {
         PROTO_UDP
     }
 
-    async fn close(&self) -> Result<(), Error> {
-        Ok(())
-    }
+    async fn close(&self) {}
 }
 
 #[cfg(test)]
