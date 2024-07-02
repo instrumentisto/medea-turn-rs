@@ -14,7 +14,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex as SyncMutex,
+        Arc,
     },
 };
 
@@ -43,9 +43,6 @@ use crate::{
 use self::{channel_bind::ChannelBind, permission::Permission};
 
 pub(crate) use allocation_manager::{Manager, ManagerConfig};
-
-/// [`Allocation`]s storage.
-pub(crate) type AllocationMap = HashMap<FiveTuple, Arc<Allocation>>;
 
 /// Information about an allocation.
 #[derive(Debug, Clone)]
@@ -119,7 +116,7 @@ pub(crate) struct Allocation {
 
     /// Channel to the internal loop used to update lifetime or drop
     /// allocation.
-    refresh_tx: SyncMutex<Option<mpsc::Sender<Duration>>>,
+    refresh_tx: mpsc::Sender<Duration>,
 
     /// Total number of relayed bytes.
     relayed_bytes: AtomicUsize,
@@ -130,7 +127,6 @@ pub(crate) struct Allocation {
 
 impl Allocation {
     /// Creates a new [`Allocation`].
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         turn_socket: Arc<dyn Conn + Send + Sync>,
         relay_socket: Arc<UdpSocket>,
@@ -139,28 +135,29 @@ impl Allocation {
         lifetime: Duration,
         username: Username,
         alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
-    ) -> Arc<Self> {
+    ) -> Self {
         let (refresh_tx, refresh_rx) = mpsc::channel(8);
 
-        let this = Arc::new(Self {
+        let this = Self {
             relay_addr,
             relay_socket,
             five_tuple,
             username,
             permissions: Arc::new(Mutex::new(HashMap::new())),
             channel_bindings: Arc::new(Mutex::new(HashMap::new())),
-            refresh_tx: SyncMutex::new(Some(refresh_tx)),
+            refresh_tx,
             relayed_bytes: AtomicUsize::default(),
             alloc_close_notify,
-        });
+        };
 
-        Arc::clone(&this).spawn_relay_handler(
-            refresh_rx,
-            lifetime,
-            turn_socket,
-        );
+        this.spawn_relay_handler(refresh_rx, lifetime, turn_socket);
 
         this
+    }
+
+    /// Returns whether underlying relay socket and transmission loop is alive.
+    pub(crate) fn alive(&self) -> bool {
+        !self.refresh_tx.is_closed()
     }
 
     /// Send the given data via associated relay socket.
@@ -169,6 +166,10 @@ impl Allocation {
         data: &[u8],
         to: SocketAddr,
     ) -> Result<(), Error> {
+        if !self.alive() {
+            return Err(Error::NoAllocationFound);
+        }
+
         match self.relay_socket.send_to(data, to).await {
             Ok(n) => {
                 _ = self.relayed_bytes.fetch_add(n, Ordering::AcqRel);
@@ -186,11 +187,19 @@ impl Allocation {
 
     /// Checks the Permission for the `addr`.
     pub(crate) async fn has_permission(&self, addr: &SocketAddr) -> bool {
+        if !self.alive() {
+            return false;
+        }
+
         self.permissions.lock().await.get(&addr.ip()).is_some()
     }
 
     /// Adds a new [`Permission`] to this [`Allocation`].
     pub(crate) async fn add_permission(&self, ip: IpAddr) {
+        if !self.alive() {
+            return;
+        }
+
         let mut permissions = self.permissions.lock().await;
 
         if let Some(existed_permission) = permissions.get(&ip) {
@@ -211,6 +220,10 @@ impl Allocation {
         peer_addr: SocketAddr,
         lifetime: Duration,
     ) -> Result<(), Error> {
+        if !self.alive() {
+            return Err(Error::NoAllocationFound);
+        }
+
         // The channel number is not currently bound to a different transport
         // address (same transport address is OK);
         if let Some(addr) = self.get_channel_addr(&number).await {
@@ -256,6 +269,10 @@ impl Allocation {
         &self,
         number: &u16,
     ) -> Option<SocketAddr> {
+        if !self.alive() {
+            return None;
+        }
+
         self.channel_bindings.lock().await.get(number).map(ChannelBind::peer)
     }
 
@@ -264,6 +281,9 @@ impl Allocation {
         &self,
         addr: &SocketAddr,
     ) -> Option<u16> {
+        if !self.alive() {
+            return None;
+        }
         self.channel_bindings
             .lock()
             .await
@@ -271,43 +291,9 @@ impl Allocation {
             .find_map(|b| (b.peer() == *addr).then_some(b.num()))
     }
 
-    /// Closes the [`Allocation`].
-    pub(crate) async fn close(&self) {
-        #[allow(clippy::unwrap_used)]
-        if self.refresh_tx.lock().unwrap().take().is_none() {
-            return;
-        }
-
-        drop(mem::take(&mut *self.permissions.lock().await));
-        drop(mem::take(&mut *self.channel_bindings.lock().await));
-
-        log::trace!("allocation with {} closed!", self.five_tuple);
-
-        self.relay_socket.close().await;
-
-        if let Some(notify_tx) = &self.alloc_close_notify {
-            drop(
-                notify_tx
-                    .send(AllocInfo {
-                        five_tuple: self.five_tuple,
-                        username: self.username.name().to_owned(),
-                        relayed_bytes: self
-                            .relayed_bytes
-                            .load(Ordering::Acquire),
-                    })
-                    .await,
-            );
-        }
-    }
-
     /// Updates the allocations lifetime.
     pub(crate) async fn refresh(&self, lifetime: Duration) {
-        #[allow(clippy::unwrap_used)]
-        let reset_tx = self.refresh_tx.lock().unwrap().clone();
-
-        if let Some(tx) = reset_tx {
-            _ = tx.send(lifetime).await;
-        }
+        _ = self.refresh_tx.send(lifetime).await;
     }
 
     ///  When the server receives a UDP datagram at a currently allocated
@@ -330,13 +316,19 @@ impl Allocation {
     ///  is then sent on the 5-tuple associated with the allocation.
     #[allow(clippy::too_many_lines)]
     fn spawn_relay_handler(
-        self: Arc<Self>,
+        &self,
         mut refresh_rx: mpsc::Receiver<Duration>,
         lifetime: Duration,
         turn_socket: Arc<dyn Conn + Send + Sync>,
     ) {
+        let five_tuple = self.five_tuple;
+        let relay_addr = self.relay_addr;
+        let relay_socket = Arc::clone(&self.relay_socket);
+        let channel_bindings = Arc::clone(&self.channel_bindings);
+        let permissions = Arc::clone(&self.permissions);
+
         drop(tokio::spawn(async move {
-            log::trace!("listening on relay addr: {:?}", self.relay_addr);
+            log::trace!("listening on relay addr: {relay_addr}");
 
             let expired = sleep(lifetime);
             tokio::pin!(expired);
@@ -344,7 +336,7 @@ impl Allocation {
 
             loop {
                 let (data, src_addr) = tokio::select! {
-                    result = self.relay_socket.recv_from(&mut buffer) => {
+                    result = relay_socket.recv_from(&mut buffer) => {
                         if let Ok((n, src_addr)) = result {
                             (&buffer[..n], src_addr)
                         } else {
@@ -370,9 +362,7 @@ impl Allocation {
                     },
                 };
 
-                #[allow(clippy::significant_drop_in_scrutinee)]
-                let cb_number = self
-                    .channel_bindings
+                let cb_number = channel_bindings
                     .lock()
                     .await
                     .iter()
@@ -383,7 +373,7 @@ impl Allocation {
                     match ChannelData::encode(data, number) {
                         Ok(data) => {
                             if let Err(err) = turn_socket
-                                .send_to(data, self.five_tuple.src_addr)
+                                .send_to(data, five_tuple.src_addr)
                                 .await
                             {
                                 match err {
@@ -409,16 +399,13 @@ impl Allocation {
                         }
                     };
                 } else {
-                    let has_permission = self
-                        .permissions
-                        .lock()
-                        .await
-                        .contains_key(&src_addr.ip());
+                    let has_permission =
+                        permissions.lock().await.contains_key(&src_addr.ip());
 
                     if has_permission {
                         log::trace!(
                             "relaying message from {src_addr} to client at {}",
-                            self.five_tuple.src_addr
+                            five_tuple.src_addr
                         );
 
                         let mut msg: Message<Attribute> = Message::new(
@@ -436,7 +423,7 @@ impl Allocation {
                         match MessageEncoder::new().encode_into_bytes(msg) {
                             Ok(encoded) => {
                                 if let Err(err) = turn_socket
-                                    .send_to(encoded, self.five_tuple.src_addr)
+                                    .send_to(encoded, five_tuple.src_addr)
                                     .await
                                 {
                                     log::error!(
@@ -452,19 +439,34 @@ impl Allocation {
                     } else {
                         log::info!(
                             "No Permission or Channel exists for {src_addr} on \
-                                allocation {}", self.relay_addr
+                                allocation {relay_addr}"
                         );
                     }
                 }
             }
-
-            self.close().await;
+            drop(mem::take(&mut *channel_bindings.lock().await));
+            drop(mem::take(&mut *permissions.lock().await));
 
             log::trace!(
-                "{:?} allocation stopped, stop packet_handler",
-                self.five_tuple
+                "{five_tuple:?} allocation stopped, stop packet_handler",
             );
         }));
+    }
+}
+
+impl Drop for Allocation {
+    fn drop(&mut self) {
+        if let Some(notify_tx) = self.alloc_close_notify.take() {
+            let info = AllocInfo {
+                five_tuple: self.five_tuple,
+                username: self.username.name().to_owned(),
+                relayed_bytes: self.relayed_bytes.load(Ordering::Acquire),
+            };
+
+            drop(tokio::spawn(async move {
+                drop(notify_tx.send(info).await);
+            }));
+        }
     }
 }
 
@@ -502,7 +504,6 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -536,7 +537,6 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -559,7 +559,6 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -593,7 +592,6 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -626,7 +624,6 @@ mod allocation_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            HashMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -640,8 +637,6 @@ mod allocation_test {
 
         // add permission
         a.add_permission(addr.ip()).await;
-
-        a.close().await.unwrap();
     }
 }
 

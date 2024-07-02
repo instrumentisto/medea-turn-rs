@@ -84,7 +84,7 @@ mod channel_bind_test {
     use tokio::net::UdpSocket;
 
     use crate::{
-        allocation::{Allocation, AllocationMap},
+        allocation::Allocation,
         attr::{ChannelNumber, Username},
         server::DEFAULT_LIFETIME,
         Error, FiveTuple,
@@ -104,7 +104,6 @@ mod channel_bind_test {
             relay_addr,
             FiveTuple::default(),
             DEFAULT_LIFETIME,
-            AllocationMap::default(),
             Username::new(String::from("user")).unwrap(),
             None,
         );

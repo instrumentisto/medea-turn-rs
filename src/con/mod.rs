@@ -79,8 +79,10 @@ pub enum Request {
 /// Abstracting over transport implementation.
 #[async_trait]
 pub trait Conn {
+    /// Receives a [Request] datagram message on the socket.
     async fn recv_from(&self) -> Result<(Request, SocketAddr), Error>;
 
+    /// Sends data on the socket to the given address.
     async fn send_to(
         &self,
         buf: Vec<u8>,

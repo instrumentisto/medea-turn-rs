@@ -6,12 +6,10 @@ use std::{fmt, sync::Arc};
 
 use tokio::{sync::mpsc, time::Duration};
 
-use crate::{
-    allocation::AllocInfo, con::Conn, relay::RelayAllocator, AuthHandler,
-};
+use crate::{allocation::AllocInfo, con::Conn, relay::RelayAllocator};
 
 /// [`Config`] configures the TURN Server.
-pub struct Config {
+pub struct Config<A> {
     /// `conn_configs` are a list of all the turn listeners.
     /// Each listener can have custom behavior around the creation of Relays.
     pub connections: Vec<Arc<dyn Conn + Send + Sync>>,
@@ -24,7 +22,7 @@ pub struct Config {
 
     /// `auth_handler` is a callback used to handle incoming auth requests,
     /// allowing users to customize Pion TURN with custom behavior.
-    pub auth_handler: Arc<dyn AuthHandler + Send + Sync>,
+    pub auth_handler: Arc<A>,
 
     /// Sets the lifetime of channel binding.
     pub channel_bind_lifetime: Duration,
@@ -33,7 +31,7 @@ pub struct Config {
     pub alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
 }
 
-impl fmt::Debug for Config {
+impl<A> fmt::Debug for Config<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Config")
             .field(
@@ -46,7 +44,7 @@ impl fmt::Debug for Config {
             )
             .field("relay_addr_generator", &self.relay_addr_generator)
             .field("realm", &self.realm)
-            .field("auth_handler", &"dyn AuthHandler")
+            .field("auth_handler", &"AuthHandler")
             .field("channel_bind_lifetime", &self.channel_bind_lifetime)
             .field("alloc_close_notify", &self.alloc_close_notify)
             .finish()

@@ -18,7 +18,7 @@ use tokio::{
 
 use crate::{
     allocation::{AllocInfo, FiveTuple, Manager, ManagerConfig},
-    Error,
+    AuthHandler, Error,
 };
 
 pub use self::config::Config;
@@ -41,8 +41,10 @@ pub struct Server {
 impl Server {
     /// creates a new TURN server
     #[must_use]
-    #[allow(clippy::too_many_lines)]
-    pub fn new(config: Config) -> Self {
+    pub fn new<A>(config: Config<A>) -> Self
+    where
+        A: AuthHandler + Send + Sync + 'static,
+    {
         let (command_tx, _) = broadcast::channel(16);
         let this = Self { command_tx: Mutex::new(Some(command_tx.clone())) };
         let channel_bind_lifetime =
@@ -78,8 +80,7 @@ impl Server {
                                     allocation_manager
                                         .delete_allocations_by_username(
                                             name.as_str(),
-                                        )
-                                        .await;
+                                        );
                                     drop(completion);
                                 }
                                 Ok(Command::GetAllocationsInfo(
@@ -142,7 +143,6 @@ impl Server {
                     }
                 }
 
-                allocation_manager.close().await;
                 conn.close().await;
             }));
         }
@@ -208,6 +208,7 @@ impl Server {
                 .map_err(|_| Error::Closed)?;
 
             let mut info: HashMap<FiveTuple, AllocInfo> = HashMap::new();
+
             for _ in 0..tx.receiver_count() {
                 info.extend(infos_rx.recv().await.ok_or(Error::Closed)?);
             }
@@ -236,7 +237,7 @@ impl Server {
 }
 
 /// The protocol to communicate between the [`Server`]'s public methods
-/// and the tasks spawned in the [`Server::spawn_read_loop`] method.
+/// and the tasks spawned in inner loop.
 #[derive(Clone)]
 enum Command {
     /// Command to delete [`Allocation`][`Allocation`] by provided `username`.

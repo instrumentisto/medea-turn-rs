@@ -149,17 +149,16 @@
 mod allocation;
 mod attr;
 mod chandata;
-mod con;
+pub mod con;
 mod relay;
 mod server;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use thiserror::Error;
 
 pub use self::{
     allocation::{AllocInfo, FiveTuple},
-    con::TcpServer,
     relay::RelayAllocator,
     server::{Config, Server},
 };
@@ -178,6 +177,17 @@ pub trait AuthHandler {
         realm: &str,
         src_addr: SocketAddr,
     ) -> Result<Box<str>, Error>;
+}
+
+impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
+    fn auth_handle(
+        &self,
+        username: &str,
+        realm: &str,
+        src_addr: SocketAddr,
+    ) -> Result<Box<str>, Error> {
+        (**self).auth_handle(username, realm, src_addr)
+    }
 }
 
 /// TURN server errors.
@@ -216,10 +226,6 @@ pub enum Error {
     /// Cannot create allocation for the same five-tuple.
     #[error("allocation attempt created with duplicate FiveTuple")]
     DupeFiveTuple,
-
-    /// The given nonce is wrong or already been used.
-    #[error("duplicated Nonce generated, discarding request")]
-    RequestReplay,
 
     /// Authentication error.
     #[error("no such user exists")]

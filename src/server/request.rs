@@ -60,7 +60,7 @@ pub(crate) async fn handle_message(
     channel_bind_lifetime: Duration,
     allocs: &mut Manager,
     nonces: &mut HashMap<String, Instant>,
-    auth_handler: &Arc<dyn AuthHandler + Send + Sync>,
+    auth_handler: &(impl AuthHandler + Send + Sync),
 ) -> Result<(), Error> {
     match msg {
         Request::ChannelData(data) => {
@@ -151,7 +151,7 @@ pub(crate) async fn handle_message(
 async fn handle_data_packet(
     data: ChannelData,
     five_tuple: FiveTuple,
-    allocs: &Manager,
+    allocs: &mut Manager,
 ) -> Result<(), Error> {
     if let Some(alloc) = allocs.get_alloc(&five_tuple) {
         let channel = alloc.get_channel_addr(&data.num()).await;
@@ -192,7 +192,7 @@ async fn handle_allocate_request(
     // 2. The server checks if the 5-tuple is currently in use by an existing
     //    allocation.  If yes, the server rejects the request with a 437
     //    (Allocation Mismatch) error.
-    if allocs.has_alloc(&five_tuple) {
+    if allocs.get_alloc(&five_tuple).is_some() {
         respond_with_err(&msg, AllocationMismatch, conn, five_tuple.src_addr)
             .await?;
 
@@ -336,7 +336,7 @@ async fn handle_allocate_request(
     //    different server.  The use of this error code and attribute follow the
     //    specification in [RFC5389].
     let lifetime_duration = get_lifetime(&msg);
-    let allocation = match allocs
+    let relay_addr = match allocs
         .create_allocation(
             five_tuple,
             Arc::clone(conn),
@@ -379,7 +379,7 @@ async fn handle_allocate_request(
             msg.transaction_id(),
         );
 
-        msg.add_attribute(XorRelayAddress::new(allocation.relay_addr()));
+        msg.add_attribute(XorRelayAddress::new(relay_addr));
         msg.add_attribute(
             Lifetime::new(lifetime_duration)
                 .map_err(|e| Error::Encode(*e.kind()))?,
@@ -401,7 +401,7 @@ async fn handle_allocate_request(
 /// Authenticates the given [`Message`].
 async fn authenticate_request(
     msg: &Message<Attribute>,
-    auth_handler: &Arc<dyn AuthHandler + Send + Sync>,
+    auth_handler: &(impl AuthHandler + Send + Sync),
     conn: &Arc<dyn Conn + Send + Sync>,
     nonces: &mut HashMap<String, Instant>,
     five_tuple: FiveTuple,
@@ -522,7 +522,7 @@ async fn handle_refresh_request(
 
     let lifetime_duration = get_lifetime(&msg);
     if lifetime_duration == Duration::from_secs(0) {
-        allocs.delete_allocation(&five_tuple).await;
+        allocs.delete_allocation(&five_tuple);
     } else if let Some(a) = allocs.get_alloc(&five_tuple) {
         // If a server receives a Refresh Request with a
         // REQUESTED-ADDRESS-FAMILY attribute, and the
@@ -576,7 +576,7 @@ async fn handle_refresh_request(
 async fn handle_create_permission_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Conn + Send + Sync>,
-    allocs: &Manager,
+    allocs: &mut Manager,
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
@@ -647,7 +647,7 @@ async fn handle_create_permission_request(
 /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-10.2
 async fn handle_send_indication(
     msg: Message<Attribute>,
-    allocs: &Manager,
+    allocs: &mut Manager,
     five_tuple: FiveTuple,
 ) -> Result<(), Error> {
     log::trace!("received SendIndication from {}", five_tuple.src_addr);
@@ -678,7 +678,7 @@ async fn handle_send_indication(
 async fn handle_channel_bind_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Conn + Send + Sync>,
-    allocs: &Manager,
+    allocs: &mut Manager,
     five_tuple: FiveTuple,
     channel_bind_lifetime: Duration,
     uname: Username,
@@ -769,14 +769,7 @@ async fn respond_with_nonce(
         .map(char::from)
         .collect();
 
-    {
-        if nonces.contains_key(&nonce) {
-            // TODO: wtf
-            // Nonce has already been taken
-            return Err(Error::RequestReplay);
-        }
-        _ = nonces.insert(nonce.clone(), Instant::now());
-    }
+    _ = nonces.insert(nonce.clone(), Instant::now());
 
     let mut msg = Message::new(
         MessageClass::ErrorResponse,
@@ -919,7 +912,7 @@ mod request_test {
         let conn: Arc<dyn Conn + Send + Sync> =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
-        let allocation_manager = Arc::new(Manager::new(ManagerConfig {
+        let mut allocation_manager = Manager::new(ManagerConfig {
             relay_addr_generator: RelayAllocator {
                 relay_address: IpAddr::from([127, 0, 0, 1]),
                 min_port: 49152,
@@ -928,7 +921,7 @@ mod request_test {
                 address: String::from("127.0.0.1"),
             },
             alloc_close_notify: None,
-        }));
+        });
 
         let socket =
             SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), 5000);
@@ -937,11 +930,11 @@ mod request_test {
             dst_addr: conn.local_addr(),
             protocol: conn.proto(),
         };
-        let nonces = Arc::new(Mutex::new(HashMap::new()));
+        let mut nonces = HashMap::new();
 
-        nonces.lock().await.insert(STATIC_KEY.to_owned(), Instant::now());
+        _ = nonces.insert(STATIC_KEY.to_owned(), Instant::now());
 
-        allocation_manager
+        _ = allocation_manager
             .create_allocation(
                 five_tuple,
                 Arc::clone(&conn),
@@ -981,8 +974,8 @@ mod request_test {
             five_tuple,
             STATIC_KEY,
             Duration::from_secs(60),
-            &allocation_manager,
-            &nonces,
+            &mut allocation_manager,
+            &mut nonces,
             &auth,
         )
         .await

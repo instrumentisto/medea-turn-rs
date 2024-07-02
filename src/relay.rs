@@ -41,7 +41,7 @@ impl RelayAllocator {
     /// With [`Error::MaxRetriesExceeded`] if the requested port is `0` and
     /// failed to find a free port in the specified maximum retries.
     ///
-    /// With [`Error::Io`] if failed to bind to the specified port.
+    /// With [`Error::Transport`] if failed to bind to the specified port.
     pub async fn allocate_conn(
         &self,
         use_ipv4: bool,
