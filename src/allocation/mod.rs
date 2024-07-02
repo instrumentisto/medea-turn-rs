@@ -136,7 +136,7 @@ impl Allocation {
         username: Username,
         alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
     ) -> Self {
-        let (refresh_tx, refresh_rx) = mpsc::channel(8);
+        let (refresh_tx, refresh_rx) = mpsc::channel(1);
 
         let this = Self {
             relay_addr,
@@ -205,8 +205,11 @@ impl Allocation {
         if let Some(existed_permission) = permissions.get(&ip) {
             existed_permission.refresh(PERMISSION_LIFETIME).await;
         } else {
-            let mut p = Permission::new(ip);
-            p.start(Arc::clone(&self.permissions), PERMISSION_LIFETIME);
+            let p = Permission::new(
+                ip,
+                Arc::clone(&self.permissions),
+                PERMISSION_LIFETIME,
+            );
             drop(permissions.insert(p.ip(), p));
         }
     }

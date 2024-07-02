@@ -25,25 +25,17 @@ pub(crate) struct Permission {
     ip: IpAddr,
 
     /// Channel to the inner lifetime watching loop.
-    reset_tx: Option<mpsc::Sender<Duration>>,
+    reset_tx: mpsc::Sender<Duration>,
 }
 
 impl Permission {
     /// Creates a new [`Permission`].
-    pub(crate) const fn new(ip: IpAddr) -> Self {
-        Self { ip, reset_tx: None }
-    }
-
-    /// Starts [`Permission`]'s internal lifetime watching loop.
-    pub(crate) fn start(
-        &mut self,
+    pub(crate) fn new(
+        ip: IpAddr,
         permissions: Arc<Mutex<HashMap<IpAddr, Self>>>,
         lifetime: Duration,
-    ) {
+    ) -> Self {
         let (reset_tx, mut reset_rx) = mpsc::channel(1);
-        self.reset_tx = Some(reset_tx);
-
-        let ip = self.ip;
 
         drop(tokio::spawn(async move {
             let timer = sleep(lifetime);
@@ -65,6 +57,8 @@ impl Permission {
                 }
             }
         }));
+
+        Self { ip, reset_tx }
     }
 
     /// Returns [`IpAddr`] of this [`Permission`].
@@ -74,8 +68,6 @@ impl Permission {
 
     /// Updates [`Permission`]'s lifetime.
     pub(crate) async fn refresh(&self, lifetime: Duration) {
-        if let Some(tx) = &self.reset_tx {
-            _ = tx.send(lifetime).await;
-        }
+        _ = self.reset_tx.send(lifetime).await;
     }
 }

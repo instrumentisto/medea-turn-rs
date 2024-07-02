@@ -11,7 +11,7 @@ use tokio::{
             error::RecvError,
             {self},
         },
-        mpsc, oneshot, Mutex,
+        mpsc, oneshot,
     },
     time::Duration,
 };
@@ -35,7 +35,7 @@ pub(crate) const INBOUND_MTU: usize = 1500;
 #[derive(Debug)]
 pub struct Server {
     /// Channel to [`Server`]'s internal loop.
-    command_tx: Mutex<Option<broadcast::Sender<Command>>>,
+    command_tx: Option<broadcast::Sender<Command>>,
 }
 
 impl Server {
@@ -46,7 +46,7 @@ impl Server {
         A: AuthHandler + Send + Sync + 'static,
     {
         let (command_tx, _) = broadcast::channel(16);
-        let this = Self { command_tx: Mutex::new(Some(command_tx.clone())) };
+        let this = Self { command_tx: Some(command_tx.clone()) };
         let channel_bind_lifetime =
             if config.channel_bind_lifetime == Duration::from_secs(0) {
                 DEFAULT_LIFETIME
@@ -159,10 +159,8 @@ impl Server {
         &self,
         username: String,
     ) -> Result<(), Error> {
-        let tx = self.command_tx.lock().await.clone();
-
         #[allow(clippy::map_err_ignore)]
-        if let Some(tx) = tx {
+        if let Some(tx) = &self.command_tx {
             let (closed_tx, closed_rx) = mpsc::channel(1);
             _ = tx
                 .send(Command::DeleteAllocations(username, Arc::new(closed_rx)))
@@ -198,9 +196,8 @@ impl Server {
             }
         }
 
-        let tx = self.command_tx.lock().await.clone();
         #[allow(clippy::map_err_ignore)]
-        if let Some(tx) = tx {
+        if let Some(tx) = &self.command_tx {
             let (infos_tx, mut infos_rx) = mpsc::channel(1);
 
             _ = tx
@@ -222,9 +219,7 @@ impl Server {
     /// Close stops the TURN Server. It cleans up any associated state and
     /// closes all connections it is managing.
     pub async fn close(&self) {
-        let tx = self.command_tx.lock().await.take();
-
-        if let Some(tx) = tx {
+        if let Some(tx) = &self.command_tx {
             if tx.receiver_count() == 0 {
                 return;
             }
