@@ -96,9 +96,6 @@ pub trait Conn {
     ///
     /// [IANA]: https://tinyurl.com/iana-protocol-numbers
     fn proto(&self) -> u8;
-
-    /// Closes the underlying transport.
-    async fn close(&self);
 }
 
 /// Performs a DNS resolution.
@@ -166,8 +163,6 @@ impl Conn for UdpSocket {
     fn proto(&self) -> u8 {
         PROTO_UDP
     }
-
-    async fn close(&self) {}
 }
 
 #[cfg(test)]

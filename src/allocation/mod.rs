@@ -386,7 +386,7 @@ impl Allocation {
                                     con::Error::Decode(_)
                                     | con::Error::ChannelData(_)
                                     | con::Error::Io(_) => {
-                                        log::error!(
+                                        log::warn!(
                                             "Failed to send ChannelData from \
                                             allocation {src_addr}: {err}",
                                         );
@@ -395,9 +395,9 @@ impl Allocation {
                             }
                         }
                         Err(err) => {
-                            log::error!(
+                            log::warn!(
                                 "Failed to send ChannelData from allocation \
-                                {src_addr}: {err}"
+                                    {src_addr}: {err}"
                             );
                         }
                     };

@@ -36,6 +36,7 @@ use crate::{
         XorRelayAddress, PROTO_UDP,
     },
     chandata::ChannelData,
+    con,
     con::{Conn, Request},
     server::DEFAULT_LIFETIME,
     AuthHandler, Error,
@@ -796,7 +797,10 @@ async fn send_to(
         .encode_into_bytes(msg)
         .map_err(|e| Error::Encode(*e.kind()))?;
 
-    Ok(conn.send_to(bytes, dst).await?)
+    match conn.send_to(bytes, dst).await {
+        Ok(()) | Err(con::Error::TransportIsDead) => Ok(()),
+        Err(err) => Err(Error::from(err)),
+    }
 }
 
 /// Send a STUN packet and return the original error to the caller

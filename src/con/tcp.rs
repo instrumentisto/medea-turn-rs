@@ -4,7 +4,6 @@
 
 use std::{
     collections::{hash_map::Entry, HashMap},
-    mem,
     net::SocketAddr,
     sync::Arc,
 };
@@ -90,11 +89,6 @@ impl Conn for TcpServer {
 
     fn proto(&self) -> u8 {
         PROTO_TCP
-    }
-
-    async fn close(&self) {
-        self.ingress_rx.lock().await.close();
-        drop(mem::take(&mut *self.writers.lock().await));
     }
 }
 

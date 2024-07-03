@@ -35,7 +35,7 @@ pub(crate) const INBOUND_MTU: usize = 1500;
 #[derive(Debug)]
 pub struct Server {
     /// Channel to [`Server`]'s internal loop.
-    command_tx: Option<broadcast::Sender<Command>>,
+    command_tx: broadcast::Sender<Command>,
 }
 
 impl Server {
@@ -46,7 +46,7 @@ impl Server {
         A: AuthHandler + Send + Sync + 'static,
     {
         let (command_tx, _) = broadcast::channel(16);
-        let this = Self { command_tx: Some(command_tx.clone()) };
+        let this = Self { command_tx: command_tx.clone() };
         let channel_bind_lifetime =
             if config.channel_bind_lifetime == Duration::from_secs(0) {
                 DEFAULT_LIFETIME
@@ -55,9 +55,9 @@ impl Server {
             };
 
         for conn in config.connections {
-            let mut nonces = HashMap::new();
             let auth_handler = Arc::clone(&config.auth_handler);
             let realm = config.realm.clone();
+            let mut nonces = HashMap::new();
             let mut handle_rx = command_tx.subscribe();
             let mut allocation_manager = Manager::new(ManagerConfig {
                 relay_addr_generator: config.relay_addr_generator.clone(),
@@ -79,7 +79,7 @@ impl Server {
                                 )) => {
                                     allocation_manager
                                         .delete_allocations_by_username(
-                                            name.as_str(),
+                                            &name,
                                         );
                                     drop(completion);
                                 }
@@ -93,11 +93,6 @@ impl Server {
                                 }
                                 Err(RecvError::Closed) => {
                                     close_rx.close();
-                                    break;
-                                }
-                                Ok(Command::Close(completion)) => {
-                                    close_rx.close();
-                                    drop(completion);
                                     break;
                                 }
                                 Err(RecvError::Lagged(n)) => {
@@ -131,7 +126,7 @@ impl Server {
                             dst_addr: local_con_addr,
                             protocol,
                         },
-                        realm.as_str(),
+                        &realm,
                         channel_bind_lifetime,
                         &mut allocation_manager,
                         &mut nonces,
@@ -139,11 +134,9 @@ impl Server {
                     );
 
                     if let Err(err) = handle.await {
-                        log::error!("error when handling datagram: {err}");
+                        log::warn!("Error when handling STUN request: {err}");
                     }
                 }
-
-                conn.close().await;
             }));
         }
 
@@ -159,19 +152,16 @@ impl Server {
         &self,
         username: String,
     ) -> Result<(), Error> {
+        let (closed_tx, closed_rx) = mpsc::channel(1);
         #[allow(clippy::map_err_ignore)]
-        if let Some(tx) = &self.command_tx {
-            let (closed_tx, closed_rx) = mpsc::channel(1);
-            _ = tx
-                .send(Command::DeleteAllocations(username, Arc::new(closed_rx)))
-                .map_err(|_| Error::Closed)?;
+        let _: usize = self
+            .command_tx
+            .send(Command::DeleteAllocations(username, Arc::new(closed_rx)))
+            .map_err(|_| Error::Closed)?;
 
-            closed_tx.closed().await;
+        closed_tx.closed().await;
 
-            Ok(())
-        } else {
-            Err(Error::Closed)
-        }
+        Ok(())
     }
 
     /// Returns [`AllocInfo`]s by specified [`FiveTuple`]s.
@@ -196,38 +186,21 @@ impl Server {
             }
         }
 
+        let (infos_tx, mut infos_rx) = mpsc::channel(1);
+
         #[allow(clippy::map_err_ignore)]
-        if let Some(tx) = &self.command_tx {
-            let (infos_tx, mut infos_rx) = mpsc::channel(1);
+        let _: usize = self
+            .command_tx
+            .send(Command::GetAllocationsInfo(five_tuples, infos_tx))
+            .map_err(|_| Error::Closed)?;
 
-            _ = tx
-                .send(Command::GetAllocationsInfo(five_tuples, infos_tx))
-                .map_err(|_| Error::Closed)?;
+        let mut info: HashMap<FiveTuple, AllocInfo> = HashMap::new();
 
-            let mut info: HashMap<FiveTuple, AllocInfo> = HashMap::new();
-
-            for _ in 0..tx.receiver_count() {
-                info.extend(infos_rx.recv().await.ok_or(Error::Closed)?);
-            }
-
-            Ok(info)
-        } else {
-            Err(Error::Closed)
+        for _ in 0..self.command_tx.receiver_count() {
+            info.extend(infos_rx.recv().await.ok_or(Error::Closed)?);
         }
-    }
 
-    /// Close stops the TURN Server. It cleans up any associated state and
-    /// closes all connections it is managing.
-    pub async fn close(&self) {
-        if let Some(tx) = &self.command_tx {
-            if tx.receiver_count() == 0 {
-                return;
-            }
-
-            let (closed_tx, closed_rx) = mpsc::channel(1);
-            drop(tx.send(Command::Close(Arc::new(closed_rx))));
-            closed_tx.closed().await;
-        }
+        Ok(info)
     }
 }
 
@@ -248,7 +221,4 @@ enum Command {
         Option<Vec<FiveTuple>>,
         mpsc::Sender<HashMap<FiveTuple, AllocInfo>>,
     ),
-
-    /// Command to close the [`Server`].
-    Close(Arc<mpsc::Receiver<()>>),
 }
