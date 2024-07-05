@@ -65,7 +65,7 @@ impl RelayAllocator {
                 };
 
                 let mut relay_addr =
-                    conn.local_addr().map_err(con::Error::from)?;
+                    conn.local_addr().map_err(con::TransportError::from)?;
                 relay_addr.set_ip(self.relay_address);
                 return Ok((Arc::new(conn), relay_addr));
             }
@@ -78,9 +78,12 @@ impl RelayAllocator {
             )
             .await?;
             let conn = Arc::new(
-                UdpSocket::bind(addr).await.map_err(con::Error::from)?,
+                UdpSocket::bind(addr)
+                    .await
+                    .map_err(con::TransportError::from)?,
             );
-            let mut relay_addr = conn.local_addr().map_err(con::Error::from)?;
+            let mut relay_addr =
+                conn.local_addr().map_err(con::TransportError::from)?;
             relay_addr.set_ip(self.relay_address);
 
             Ok((conn, relay_addr))

@@ -155,10 +155,12 @@ mod server;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use thiserror::Error;
+use derive_more::{Display, Error as StdError, From};
 
+#[cfg(test)]
+pub(crate) use self::allocation::Allocation;
 pub use self::{
-    allocation::{AllocInfo, FiveTuple},
+    allocation::{FiveTuple, Info as AllocationInfo},
     relay::RelayAllocator,
     server::{Config, Server},
 };
@@ -191,67 +193,67 @@ impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
 }
 
 /// TURN server errors.
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Display, Eq, From, PartialEq, StdError)]
 #[non_exhaustive]
 #[allow(variant_size_differences)]
 pub enum Error {
     /// Failed to allocate new relay connection sine maximum retires count
     /// exceeded.
-    #[error("turn: max retries exceeded")]
+    #[display("turn: max retries exceeded")]
     MaxRetriesExceeded,
 
     /// A peer address is part of a different address family than that of the
     /// relayed transport address of the allocation.
-    #[error("error code 443: peer address family mismatch")]
+    #[display("error code 443: peer address family mismatch")]
     PeerAddressFamilyMismatch,
 
     /// Error when trying to perform action after closing server.
-    #[error("use of closed network connection")]
+    #[display("use of closed network connection")]
     Closed,
 
     /// Channel binding request failed since channel number is currently bound
     /// to a different transport address.
-    #[error("you cannot use the same channel number with different peer")]
+    #[display("you cannot use the same channel number with different peer")]
     SameChannelDifferentPeer,
 
     /// Channel binding request failed since the transport address is currently
     /// bound to a different channel number.
-    #[error("you cannot use the same peer number with different channel")]
+    #[display("you cannot use the same peer number with different channel")]
     SamePeerDifferentChannel,
 
     /// Cannot create allocation with zero lifetime.
-    #[error("allocations must not be created with a lifetime of 0")]
+    #[display("allocations must not be created with a lifetime of 0")]
     LifetimeZero,
 
     /// Cannot create allocation for the same five-tuple.
-    #[error("allocation attempt created with duplicate FiveTuple")]
+    #[display("allocation attempt created with duplicate FiveTuple")]
     DupeFiveTuple,
 
     /// Authentication error.
-    #[error("no such user exists")]
+    #[display("no such user exists")]
     NoSuchUser,
 
     /// Unsupported request class.
-    #[error("unexpected class")]
+    #[display("unexpected class")]
     UnexpectedClass,
 
     /// Allocate request failed since allocation already exists for the given
     /// five-tuple.
-    #[error("relay already allocated for 5-TUPLE")]
+    #[display("relay already allocated for 5-TUPLE")]
     RelayAlreadyAllocatedForFiveTuple,
 
     /// STUN message does not have a required attribute.
-    #[error("requested attribute not found")]
+    #[display("requested attribute not found")]
     AttributeNotFound,
 
     /// STUN message contains wrong message integrity.
-    #[error("message integrity mismatch")]
+    #[display("message integrity mismatch")]
     IntegrityMismatch,
 
     /// [DONT-FRAGMENT][1] attribute is not supported.
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.8
-    #[error("no support for DONT-FRAGMENT")]
+    #[display("no support for DONT-FRAGMENT")]
     NoDontFragmentSupport,
 
     /// Allocate request cannot have both [RESERVATION-TOKEN][1] and
@@ -259,7 +261,7 @@ pub enum Error {
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
     /// [EVEN-PORT]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.6
-    #[error("Request must not contain RESERVATION-TOKEN and EVEN-PORT")]
+    #[display("Request must not contain RESERVATION-TOKEN and EVEN-PORT")]
     RequestWithReservationTokenAndEvenPort,
 
     /// Allocation request cannot contain both [RESERVATION-TOKEN][1] and
@@ -267,35 +269,36 @@ pub enum Error {
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
     /// [2]: https://www.rfc-editor.org/rfc/rfc6156#section-4.1.1
-    #[error(
+    #[display(
         "Request must not contain RESERVATION-TOKEN \
             and REQUESTED-ADDRESS-FAMILY"
     )]
     RequestWithReservationTokenAndReqAddressFamily,
 
     /// No allocation for the given five-tuple.
-    #[error("no allocation found")]
+    #[display("no allocation found")]
     NoAllocationFound,
 
     /// The specified protocol is not supported.
-    #[error("allocation requested unsupported proto")]
+    #[display("allocation requested unsupported proto")]
     UnsupportedRelayProto,
 
     /// Failed to handle send indication since there is no permission for the
     /// given address.
-    #[error("unable to handle send-indication, no permission added")]
+    #[display("unable to handle send-indication, no permission added")]
     NoPermission,
 
     /// Failed to handle channel data since ther is no binding for the given
     /// channel.
-    #[error("no such channel bind")]
+    #[display("no such channel bind")]
     NoSuchChannelBind,
 
     /// Failed to encode message.
-    #[error("Failed to encode STUN/TURN message: {0:?}")]
-    Encode(bytecodec::ErrorKind),
+    #[display("Failed to encode STUN/TURN message: {_0:?}")]
+    #[from(ignore)]
+    Encode(#[error(not(source))] bytecodec::ErrorKind),
 
     /// Failed to encode message.
-    #[error("Transport error: {0}")]
-    Transport(#[from] con::Error),
+    #[display("Transport error: {_0}")]
+    Transport(con::TransportError),
 }

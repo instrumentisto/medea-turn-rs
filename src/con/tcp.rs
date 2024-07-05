@@ -23,7 +23,7 @@ use tokio_util::codec::{Decoder, FramedRead};
 use crate::{
     attr::{Attribute, PROTO_TCP},
     chandata::{nearest_padded_value_length, ChannelData},
-    con::{Conn, Error, Request},
+    con::{Conn, Request, TransportError},
 };
 
 /// Channels to the active TCP sessions.
@@ -31,7 +31,10 @@ type TcpWritersMap = Arc<
     Mutex<
         HashMap<
             SocketAddr,
-            mpsc::Sender<(Vec<u8>, oneshot::Sender<Result<(), Error>>)>,
+            mpsc::Sender<(
+                Vec<u8>,
+                oneshot::Sender<Result<(), TransportError>>,
+            )>,
         >,
     >,
 >;
@@ -51,11 +54,11 @@ pub struct TcpServer {
 
 #[async_trait]
 impl Conn for TcpServer {
-    async fn recv_from(&self) -> Result<(Request, SocketAddr), Error> {
+    async fn recv_from(&self) -> Result<(Request, SocketAddr), TransportError> {
         if let Some((data, addr)) = self.ingress_rx.lock().await.recv().await {
             Ok((data, addr))
         } else {
-            Err(Error::TransportIsDead)
+            Err(TransportError::TransportIsDead)
         }
     }
 
@@ -64,7 +67,7 @@ impl Conn for TcpServer {
         &self,
         data: Vec<u8>,
         target: SocketAddr,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TransportError> {
         let mut writers = self.writers.lock().await;
         match writers.entry(target) {
             Entry::Occupied(mut e) => {
@@ -73,13 +76,13 @@ impl Conn for TcpServer {
                     // Underlying TCP stream is dead.
                     drop(e.remove_entry());
 
-                    Err(Error::TransportIsDead)
+                    Err(TransportError::TransportIsDead)
                 } else {
                     #[allow(clippy::map_err_ignore)]
-                    res_rx.await.map_err(|_| Error::TransportIsDead)?
+                    res_rx.await.map_err(|_| TransportError::TransportIsDead)?
                 }
             }
-            Entry::Vacant(_) => Err(Error::TransportIsDead),
+            Entry::Vacant(_) => Err(TransportError::TransportIsDead),
         }
     }
 
@@ -97,9 +100,9 @@ impl TcpServer {
     ///
     /// # Errors
     ///
-    /// With [`enum@Error`] if failed to receive local [`SocketAddr`] for the
-    /// provided [`TcpListener`].
-    pub fn new(listener: TcpListener) -> Result<Self, Error> {
+    /// With [`TransportError`] if failed to receive local [`SocketAddr`] for
+    /// the provided [`TcpListener`].
+    pub fn new(listener: TcpListener) -> Result<Self, TransportError> {
         let local_addr = listener.local_addr()?;
         let (ingress_tx, ingress_rx) = mpsc::channel(256);
         let writers = Arc::new(Mutex::new(HashMap::new()));
@@ -148,7 +151,7 @@ impl TcpServer {
         drop(tokio::spawn(async move {
             let (egress_tx, mut egress_rx) = mpsc::channel::<(
                 Vec<u8>,
-                oneshot::Sender<Result<(), Error>>,
+                oneshot::Sender<Result<(), TransportError>>,
             )>(256);
             drop(writers.lock().await.insert(remote, egress_tx));
 
@@ -160,7 +163,7 @@ impl TcpServer {
                         if let Some((msg, tx)) = msg {
                             let res =
                                 writer.write_all(msg.as_slice()).await
-                                    .map_err(Error::from);
+                                    .map_err(TransportError::from);
 
                             drop(tx.send(res));
                         } else {
@@ -281,7 +284,7 @@ struct StunTcpCodec {
 
 impl Decoder for StunTcpCodec {
     type Item = Request;
-    type Error = Error;
+    type Error = TransportError;
 
     #[allow(clippy::unwrap_in_result, clippy::missing_asserts_for_indexing)]
     fn decode(
@@ -305,8 +308,10 @@ impl Decoder for StunTcpCodec {
                         let msg = self
                             .msg_decoder
                             .decode_from_bytes(&raw)
-                            .map_err(|e| Error::Decode(*e.kind()))?
-                            .map_err(|e| Error::Decode(*e.error().kind()))?;
+                            .map_err(|e| TransportError::Decode(*e.kind()))?
+                            .map_err(|e| {
+                                TransportError::Decode(*e.error().kind())
+                            })?;
 
                         Request::Message(msg)
                     }

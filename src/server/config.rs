@@ -6,7 +6,7 @@ use std::{fmt, sync::Arc};
 
 use tokio::{sync::mpsc, time::Duration};
 
-use crate::{allocation::AllocInfo, con::Conn, relay::RelayAllocator};
+use crate::{allocation::Info, con::Conn, relay::RelayAllocator};
 
 /// [`Config`] configures the TURN Server.
 pub struct Config<A> {
@@ -28,7 +28,7 @@ pub struct Config<A> {
     pub channel_bind_lifetime: Duration,
 
     /// To receive notify on allocation close event, with metrics data.
-    pub alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
+    pub alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
 impl<A> fmt::Debug for Config<A> {

@@ -1,6 +1,6 @@
-//! [Allocation]s storage.
+//! Storage of [allocation]s.
 //!
-//! [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+//! [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
 
 use std::{
     collections::HashMap,
@@ -11,35 +11,36 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use crate::{
-    allocation::Allocation, attr::Username, con::Conn, relay::RelayAllocator,
-    AllocInfo, Error, FiveTuple,
-};
+use crate::{attr::Username, con::Conn, Error, RelayAllocator};
 
-/// `ManagerConfig` a bag of config params for [`Manager`].
-pub(crate) struct ManagerConfig {
-    /// Relay connections allocator.
+use super::{Allocation, FiveTuple, Info};
+
+/// Configuration parameters of a [`Manager`].
+#[derive(Debug)]
+pub(crate) struct Config {
+    /// [`RelayAllocator`] of connections.
     pub(crate) relay_addr_generator: RelayAllocator,
 
-    /// Injected into allocations to notify when allocation is closed.
-    pub(crate) alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
+    /// [`mpsc::Sender`] for notifying when an [`Allocation`] is closed.
+    pub(crate) alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
-/// [`Manager`] is used to hold active allocations.
+/// [`Manager`] holding active [`Allocation`]s.
+#[derive(Debug)]
 pub(crate) struct Manager {
-    /// [`Allocation`]s storage.
+    /// Stored [`Allocation`]s.
     allocations: HashMap<FiveTuple, Allocation>,
 
-    /// Relay connections allocator.
+    /// [`RelayAllocator`] of connections.
     relay_allocator: RelayAllocator,
 
-    /// Injected into allocations to notify when allocation is closed.
-    alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
+    /// [`mpsc::Sender`] for notifying when an [`Allocation`] is closed.
+    alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
 impl Manager {
-    /// Creates a new [`Manager`].
-    pub(crate) fn new(config: ManagerConfig) -> Self {
+    /// Creates a new [`Manager`] out of the provided [`Config`].
+    pub(crate) fn new(config: Config) -> Self {
         Self {
             allocations: HashMap::default(),
             relay_allocator: config.relay_addr_generator,
@@ -47,25 +48,22 @@ impl Manager {
         }
     }
 
-    /// Returns the information about the all [`Allocation`]s associated with
-    /// the specified [`FiveTuple`]s.
+    /// Returns information about all the [`Allocation`]s associated with the
+    /// provided [`FiveTuple`]s.
     pub(crate) fn get_allocations_info(
         &self,
         five_tuples: &Option<Vec<FiveTuple>>,
-    ) -> HashMap<FiveTuple, AllocInfo> {
+    ) -> HashMap<FiveTuple, Info> {
         let mut infos = HashMap::new();
 
-        #[allow(clippy::iter_over_hash_type)]
+        #[allow(clippy::iter_over_hash_type)] // order doesn't matter here
         for (five_tuple, alloc) in &self.allocations {
-            #[allow(clippy::unwrap_used)]
-            if five_tuples.is_none()
-                || five_tuples.as_ref().unwrap().contains(five_tuple)
-            {
+            if five_tuples.as_ref().map_or(true, |f| f.contains(five_tuple)) {
                 drop(infos.insert(
                     *five_tuple,
-                    AllocInfo::new(
+                    Info::new(
                         *five_tuple,
-                        alloc.username.name().to_owned(),
+                        alloc.username.clone(),
                         alloc.relayed_bytes.load(Ordering::Acquire),
                     ),
                 ));
@@ -75,7 +73,8 @@ impl Manager {
         infos
     }
 
-    /// Creates a new [`Allocation`] and starts relaying.
+    /// Creates a new [`Allocation`] with provided parameters and starts
+    /// relaying it.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn create_allocation(
         &mut self,
@@ -90,7 +89,7 @@ impl Manager {
             return Err(Error::LifetimeZero);
         }
 
-        self.allocations.retain(|_, v| v.alive());
+        self.allocations.retain(|_, v| v.is_alive());
 
         if self.get_alloc(&five_tuple).is_some() {
             return Err(Error::DupeFiveTuple);
@@ -115,53 +114,69 @@ impl Manager {
         Ok(relay_addr)
     }
 
-    /// Fetches the [`Allocation`] matching the passed [`FiveTuple`].
+    /// Returns the [`Allocation`] matching the provided [`FiveTuple`], if any.
     pub(crate) fn get_alloc(
         &mut self,
         five_tuple: &FiveTuple,
     ) -> Option<&Allocation> {
-        self.allocations.get(five_tuple).and_then(|a| a.alive().then_some(a))
+        self.allocations.get(five_tuple).and_then(|a| a.is_alive().then_some(a))
     }
 
-    /// Removes an [`Allocation`].
+    /// Removes the [`Allocation`] matching the provided [`FiveTuple`], if any.
     pub(crate) fn delete_allocation(&mut self, five_tuple: &FiveTuple) {
         drop(self.allocations.remove(five_tuple));
     }
 
-    /// Deletes the [`Allocation`]s according to the specified username `name`.
-    pub(crate) fn delete_allocations_by_username(&mut self, name: &str) {
+    /// Removes all the [`Allocation`]s with the provided `username`, if any.
+    pub(crate) fn delete_allocations_by_username(
+        &mut self,
+        username: impl AsRef<str>,
+    ) {
+        let username = username.as_ref();
         self.allocations
-            .retain(|_, allocation| allocation.username.name() != name);
+            .retain(|_, allocation| allocation.username.name() != username);
     }
 
-    /// Returns a random un-allocated udp4 port.
+    /// Returns a random non-allocated UDP port.
+    ///
+    /// # Errors
+    ///
+    /// If new port fails to be allocated. See the [`Error`] for details
     pub(crate) async fn get_random_even_port(&self) -> Result<u16, Error> {
-        let (_, addr) = self.relay_allocator.allocate_conn(true, 0).await?;
-        Ok(addr.port())
+        self.relay_allocator
+            .allocate_conn(true, 0)
+            .await
+            .map(|(_, addr)| addr.port())
     }
 }
 
 #[cfg(test)]
-mod allocation_manager_test {
-    use bytecodec::DecodeExt;
-    use rand::random;
+mod spec {
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr},
         str::FromStr,
+        sync::Arc,
+        time::Duration,
     };
+
+    use bytecodec::DecodeExt;
+    use rand::random;
     use stun_codec::MessageDecoder;
-    use tokio::{net::UdpSocket, time::sleep};
+    use tokio::{net::UdpSocket, sync::mpsc, time::sleep};
 
     use crate::{
-        attr::{Attribute, ChannelNumber, Data},
+        attr::{Attribute, ChannelNumber, Data, Username},
         chandata::ChannelData,
+        con::Conn,
         server::DEFAULT_LIFETIME,
+        Error, FiveTuple, RelayAllocator,
     };
 
-    use super::*;
+    use super::{Config, Manager};
 
-    fn new_test_manager() -> Manager {
-        let config = ManagerConfig {
+    /// Creates a new [`Manager`] for testing purposes.
+    fn create_manager() -> Manager {
+        let config = Config {
             relay_addr_generator: RelayAllocator {
                 relay_address: IpAddr::from([127, 0, 0, 1]),
                 min_port: 49152,
@@ -174,6 +189,7 @@ mod allocation_manager_test {
         Manager::new(config)
     }
 
+    /// Generates a new random [`FiveTuple`] for testing purposes.
     fn random_five_tuple() -> FiveTuple {
         FiveTuple {
             src_addr: SocketAddr::new(
@@ -189,15 +205,13 @@ mod allocation_manager_test {
     }
 
     #[tokio::test]
-    async fn test_packet_handler() {
-        // turn server initialization
+    async fn packet_handler_works() {
         let turn_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 
-        // client listener initialization
         let client_listener = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let src_addr = client_listener.local_addr().unwrap();
         let (data_ch_tx, mut data_ch_rx) = mpsc::channel(1);
-        // client listener read data
+        // `client_listener` read data
         drop(tokio::spawn(async move {
             let mut buffer = vec![0u8; 1500];
             loop {
@@ -215,7 +229,7 @@ mod allocation_manager_test {
             dst_addr: turn_socket.local_addr().unwrap(),
             ..Default::default()
         };
-        let mut m = new_test_manager();
+        let mut m = create_manager();
         _ = m
             .create_allocation(
                 five_tuple,
@@ -233,9 +247,7 @@ mod allocation_manager_test {
         let peer_listener2 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 
         let port = {
-            // add permission with peer1 address
             a.add_permission(peer_listener1.local_addr().unwrap().ip()).await;
-            // add channel with min channel number and peer2 address
             a.add_channel_bind(
                 ChannelNumber::MIN,
                 peer_listener2.local_addr().unwrap(),
@@ -251,7 +263,6 @@ mod allocation_manager_test {
         let relay_addr_with_host =
             SocketAddr::from_str(&relay_addr_with_host_str).unwrap();
 
-        // test for permission and data message
         let target_text = "permission";
         let _ = peer_listener1
             .send_to(target_text.as_bytes(), relay_addr_with_host)
@@ -263,15 +274,14 @@ mod allocation_manager_test {
             .decode_from_bytes(&data)
             .unwrap()
             .unwrap();
-
         let msg_data = msg.get_attribute::<Data>().unwrap().data().to_vec();
+
         assert_eq!(
             target_text.as_bytes(),
             &msg_data,
-            "get message doesn't equal the target text"
+            "get message doesn't equal target text",
         );
 
-        // test for channel bind and channel data
         let target_text2 = "channel bind";
         let _ = peer_listener2
             .send_to(target_text2.as_bytes(), relay_addr_with_host)
@@ -279,33 +289,30 @@ mod allocation_manager_test {
             .unwrap();
         let data = data_ch_rx.recv().await.unwrap();
 
-        // resolve channel data
         assert!(ChannelData::is_channel_data(&data), "should be channel data");
 
         let channel_data = ChannelData::decode(data).unwrap();
+
         assert_eq!(
             ChannelNumber::MIN,
             channel_data.num(),
-            "get channel data's number is invalid"
+            "get channel data's number is invalid",
         );
         assert_eq!(
             target_text2.as_bytes(),
             &channel_data.data(),
-            "get data doesn't equal the target text."
+            "get data doesn't equal target text",
         );
     }
 
     #[tokio::test]
-    async fn test_create_allocation_duplicate_five_tuple() {
-        // turn server initialization
+    async fn errors_on_duplicate_five_tuple() {
         let turn_socket: Arc<dyn Conn + Send + Sync> =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
-        let mut m = new_test_manager();
-
+        let mut m = create_manager();
         let five_tuple = random_five_tuple();
-
-        let _ = m
+        _ = m
             .create_allocation(
                 five_tuple,
                 Arc::clone(&turn_socket),
@@ -317,7 +324,7 @@ mod allocation_manager_test {
             .await
             .unwrap();
 
-        let result = m
+        let res = m
             .create_allocation(
                 five_tuple,
                 Arc::clone(&turn_socket),
@@ -327,20 +334,18 @@ mod allocation_manager_test {
                 true,
             )
             .await;
-        assert!(result.is_err(), "expected error, but got ok");
+
+        assert_eq!(res, Err(Error::DupeFiveTuple));
     }
 
     #[tokio::test]
-    async fn test_delete_allocation() {
-        // turn server initialization
+    async fn deletes_allocation() {
         let turn_socket: Arc<dyn Conn + Send + Sync> =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
-        let mut m = new_test_manager();
-
+        let mut m = create_manager();
         let five_tuple = random_five_tuple();
-
-        let _ = m
+        _ = m
             .create_allocation(
                 five_tuple,
                 Arc::clone(&turn_socket),
@@ -354,28 +359,25 @@ mod allocation_manager_test {
 
         assert!(
             m.get_alloc(&five_tuple).is_some(),
-            "Failed to get allocation right after creation"
+            "cannot to get `Allocation` right after creation",
         );
 
         m.delete_allocation(&five_tuple);
 
         assert!(
             !m.get_alloc(&five_tuple).is_some(),
-            "Get allocation with {five_tuple} should be nil after delete"
+            "`Allocation` of `{five_tuple}` was not deleted",
         );
     }
 
     #[tokio::test]
-    async fn test_allocation_timeout() {
-        // turn server initialization
+    async fn allocations_timeout() {
         let turn_socket: Arc<dyn Conn + Send + Sync> =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
-        let mut m = new_test_manager();
-
+        let mut m = create_manager();
         let mut allocations = vec![];
         let lifetime = Duration::from_millis(100);
-
         for _ in 0..5 {
             let five_tuple = random_five_tuple();
 
@@ -395,12 +397,11 @@ mod allocation_manager_test {
         }
 
         let mut count = 0;
-
         'outer: loop {
             count += 1;
 
             if count >= 10 {
-                panic!("Allocations didn't timeout");
+                panic!("`Allocation`s didn't timeout");
             }
 
             sleep(lifetime + Duration::from_millis(100)).await;
@@ -420,17 +421,15 @@ mod allocation_manager_test {
     }
 
     #[tokio::test]
-    async fn test_delete_allocation_by_username() {
+    async fn deletes_allocation_by_username() {
         let turn_socket: Arc<dyn Conn + Send + Sync> =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
-        let mut m = new_test_manager();
-
+        let mut m = create_manager();
         let five_tuple1 = random_five_tuple();
         let five_tuple2 = random_five_tuple();
         let five_tuple3 = random_five_tuple();
-
-        let _ = m
+        _ = m
             .create_allocation(
                 five_tuple1,
                 Arc::clone(&turn_socket),
@@ -441,7 +440,7 @@ mod allocation_manager_test {
             )
             .await
             .unwrap();
-        let _ = m
+        _ = m
             .create_allocation(
                 five_tuple2,
                 Arc::clone(&turn_socket),
@@ -452,7 +451,7 @@ mod allocation_manager_test {
             )
             .await
             .unwrap();
-        let _ = m
+        _ = m
             .create_allocation(
                 five_tuple3,
                 Arc::clone(&turn_socket),
@@ -464,14 +463,31 @@ mod allocation_manager_test {
             .await
             .unwrap();
 
-        assert_eq!(m.allocations.len(), 3);
+        assert_eq!(
+            m.allocations.len(),
+            3,
+            "wrong number of created `Allocation`s",
+        );
 
         m.delete_allocations_by_username("user");
 
-        assert_eq!(m.allocations.len(), 1);
+        assert_eq!(
+            m.allocations.len(),
+            1,
+            "wrong number of left `Allocation`s",
+        );
 
-        assert!(m.get_alloc(&five_tuple1).is_none());
-        assert!(m.get_alloc(&five_tuple2).is_none());
-        assert!(m.get_alloc(&five_tuple3).is_some());
+        assert!(
+            m.get_alloc(&five_tuple1).is_none(),
+            "first allocation is not deleted",
+        );
+        assert!(
+            m.get_alloc(&five_tuple2).is_none(),
+            "second allocation is not deleted",
+        );
+        assert!(
+            m.get_alloc(&five_tuple3).is_some(),
+            "third allocation is deleted",
+        );
     }
 }

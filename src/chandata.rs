@@ -1,6 +1,6 @@
 //! [`ChannelData`] message implementation.
 
-use thiserror::Error;
+use derive_more::{Display, Error};
 
 use crate::attr::ChannelNumber;
 
@@ -27,14 +27,14 @@ const CHANNEL_DATA_HEADER_SIZE: usize =
 /// TURN [ChannelData][1] format error.
 ///
 /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum Error {
+#[derive(Clone, Copy, Debug, Display, Error, Eq, PartialEq)]
+pub enum FormatError {
     /// Failed to handle channel data since channel number is incorrect.
-    #[error("channel number not in [0x4000, 0x7FFF]")]
+    #[display("channel number not in [0x4000, 0x7FFF]")]
     InvalidChannelNumber,
 
     /// Failed to handle channel data cause of incorrect message length.
-    #[error("channelData length != len(Data)")]
+    #[display("channelData length != len(Data)")]
     BadChannelDataLength,
 }
 
@@ -71,14 +71,14 @@ impl ChannelData {
     }
 
     /// Decodes the given raw message as [`ChannelData`].
-    pub(crate) fn decode(mut raw: Vec<u8>) -> Result<Self, Error> {
+    pub(crate) fn decode(mut raw: Vec<u8>) -> Result<Self, FormatError> {
         if raw.len() < CHANNEL_DATA_HEADER_SIZE {
-            return Err(Error::BadChannelDataLength);
+            return Err(FormatError::BadChannelDataLength);
         }
 
         let number = u16::from_be_bytes([raw[0], raw[1]]);
         if ChannelNumber::new(number).is_err() {
-            return Err(Error::InvalidChannelNumber);
+            return Err(FormatError::InvalidChannelNumber);
         }
 
         let l = usize::from(u16::from_be_bytes([
@@ -87,7 +87,7 @@ impl ChannelData {
         ]));
 
         if l > raw[CHANNEL_DATA_HEADER_SIZE..].len() {
-            return Err(Error::BadChannelDataLength);
+            return Err(FormatError::BadChannelDataLength);
         }
 
         // Discard header and padding.
@@ -111,13 +111,13 @@ impl ChannelData {
     pub(crate) fn encode(
         payload: &[u8],
         chan_num: u16,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<Vec<u8>, FormatError> {
         let length = CHANNEL_DATA_HEADER_SIZE + payload.len();
         let padded_length = nearest_padded_value_length(length);
 
         #[allow(clippy::map_err_ignore)]
         let len = u16::try_from(payload.len())
-            .map_err(|_| Error::BadChannelDataLength)?;
+            .map_err(|_| FormatError::BadChannelDataLength)?;
 
         let mut encoded = vec![0u8; padded_length];
 
@@ -209,21 +209,21 @@ mod chandata_test {
     #[test]
     fn test_channel_data_decode() {
         let tests = vec![
-            ("small", vec![1, 2, 3], Error::BadChannelDataLength),
+            ("small", vec![1, 2, 3], FormatError::BadChannelDataLength),
             (
                 "zeroes",
                 vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                Error::InvalidChannelNumber,
+                FormatError::InvalidChannelNumber,
             ),
             (
                 "bad chan number",
                 vec![63, 255, 0, 0, 0, 4, 0, 0, 1, 2, 3, 4],
-                Error::InvalidChannelNumber,
+                FormatError::InvalidChannelNumber,
             ),
             (
                 "bad length",
                 vec![0x40, 0x40, 0x02, 0x23, 0x16, 0, 0, 0, 0, 0, 0, 0],
-                Error::BadChannelDataLength,
+                FormatError::BadChannelDataLength,
             ),
         ];
 

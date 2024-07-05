@@ -798,7 +798,7 @@ async fn send_to(
         .map_err(|e| Error::Encode(*e.kind()))?;
 
     match conn.send_to(bytes, dst).await {
-        Ok(()) | Err(con::Error::TransportIsDead) => Ok(()),
+        Ok(()) | Err(con::TransportError::TransportIsDead) => Ok(()),
         Err(err) => Err(Error::from(err)),
     }
 }

@@ -17,7 +17,7 @@ use tokio::{
 };
 
 use crate::{
-    allocation::{AllocInfo, FiveTuple, Manager, ManagerConfig},
+    allocation::{FiveTuple, Info, Manager, ManagerConfig},
     AuthHandler, Error,
 };
 
@@ -164,7 +164,7 @@ impl Server {
         Ok(())
     }
 
-    /// Returns [`AllocInfo`]s by specified [`FiveTuple`]s.
+    /// Returns [`Info`]s by specified [`FiveTuple`]s.
     ///
     /// If `five_tuples` is:
     /// - [`None`]:               It returns information about the all
@@ -179,7 +179,7 @@ impl Server {
     pub async fn get_allocations_info(
         &self,
         five_tuples: Option<Vec<FiveTuple>>,
-    ) -> Result<HashMap<FiveTuple, AllocInfo>, Error> {
+    ) -> Result<HashMap<FiveTuple, Info>, Error> {
         if let Some(five_tuples) = &five_tuples {
             if five_tuples.is_empty() {
                 return Ok(HashMap::new());
@@ -194,7 +194,7 @@ impl Server {
             .send(Command::GetAllocationsInfo(five_tuples, infos_tx))
             .map_err(|_| Error::Closed)?;
 
-        let mut info: HashMap<FiveTuple, AllocInfo> = HashMap::new();
+        let mut info: HashMap<FiveTuple, Info> = HashMap::new();
 
         for _ in 0..self.command_tx.receiver_count() {
             info.extend(infos_rx.recv().await.ok_or(Error::Closed)?);
@@ -219,6 +219,6 @@ enum Command {
     /// [`Allocation`]: `crate::allocation::Allocation`
     GetAllocationsInfo(
         Option<Vec<FiveTuple>>,
-        mpsc::Sender<HashMap<FiveTuple, AllocInfo>>,
+        mpsc::Sender<HashMap<FiveTuple, Info>>,
     ),
 }

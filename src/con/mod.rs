@@ -8,8 +8,8 @@ use std::net::SocketAddr;
 
 use async_trait::async_trait;
 use bytecodec::DecodeExt;
+use derive_more::{Display, Error, From};
 use stun_codec::{Message, MessageDecoder};
-use thiserror::Error;
 use tokio::net::{self, ToSocketAddrs, UdpSocket};
 
 use crate::{
@@ -22,43 +22,40 @@ use crate::{
 pub use tcp::TcpServer;
 
 /// Transport-related error.
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Display, Error, From, Eq, PartialEq)]
 #[allow(variant_size_differences)]
-pub enum Error {
+pub enum TransportError {
     /// Tried to use dead transport.
-    #[error("Underlying TCP/UDP transport is dead")]
+    #[display("Underlying TCP/UDP transport is dead")]
     TransportIsDead,
 
     /// Failed to decode message.
-    #[error("Failed to decode STUN/TURN message: {0:?}")]
-    Decode(bytecodec::ErrorKind),
+    #[display("Failed to decode STUN/TURN message: {_0:?}")]
+    Decode(#[error(not(source))] bytecodec::ErrorKind),
 
     /// TURN [ChannelData][1] format error.
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-    #[error("{0}")]
-    ChannelData(#[from] chandata::Error),
+    #[from(chandata::FormatError)]
+    ChannelData(chandata::FormatError),
 
     /// Error for transport.
-    #[error("{0}")]
-    Io(#[from] IoError),
+    #[display("I/O error: {_0}")]
+    #[from(io::Error, IoError)]
+    Io(IoError),
 }
 
-/// [`io::Error`] wrapper.
-#[derive(Debug, Error)]
-#[error("io error: {0}")]
-pub struct IoError(#[from] pub io::Error);
+/// [`io::Error`] implementing [`Eq`] and [`PartialEq`] by its [`kind`].
+///
+/// [`kind`]: io::Error::kind()
+#[derive(Debug, Display, Error, From)]
+pub struct IoError(pub io::Error);
 
-// Workaround for wanting PartialEq for io::Error.
+impl Eq for IoError {}
+
 impl PartialEq for IoError {
     fn eq(&self, other: &Self) -> bool {
         self.0.kind() == other.0.kind()
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Self::Io(IoError(e))
     }
 }
 
@@ -80,14 +77,14 @@ pub enum Request {
 #[async_trait]
 pub trait Conn {
     /// Receives a [Request] datagram message on the socket.
-    async fn recv_from(&self) -> Result<(Request, SocketAddr), Error>;
+    async fn recv_from(&self) -> Result<(Request, SocketAddr), TransportError>;
 
     /// Sends data on the socket to the given address.
     async fn send_to(
         &self,
         buf: Vec<u8>,
         target: SocketAddr,
-    ) -> Result<(), Error>;
+    ) -> Result<(), TransportError>;
 
     /// Returns the local transport address.
     fn local_addr(&self) -> SocketAddr;
@@ -102,7 +99,7 @@ pub trait Conn {
 pub(crate) async fn lookup_host<T>(
     use_ipv4: bool,
     host: T,
-) -> Result<SocketAddr, Error>
+) -> Result<SocketAddr, TransportError>
 where
     T: ToSocketAddrs,
 {
@@ -126,7 +123,7 @@ where
 
 #[async_trait]
 impl Conn for UdpSocket {
-    async fn recv_from(&self) -> Result<(Request, SocketAddr), Error> {
+    async fn recv_from(&self) -> Result<(Request, SocketAddr), TransportError> {
         let mut buf = vec![0u8; INBOUND_MTU];
         let (n, addr) = self.recv_from(&mut buf).await?;
 
@@ -138,8 +135,8 @@ impl Conn for UdpSocket {
         } else {
             let msg = MessageDecoder::<Attribute>::new()
                 .decode_from_bytes(&buf[0..n])
-                .map_err(|e| Error::Decode(*e.kind()))?
-                .map_err(|e| Error::Decode(*e.error().kind()))?;
+                .map_err(|e| TransportError::Decode(*e.kind()))?
+                .map_err(|e| TransportError::Decode(*e.error().kind()))?;
 
             Request::Message(msg)
         };
@@ -151,7 +148,7 @@ impl Conn for UdpSocket {
         &self,
         data: Vec<u8>,
         target: SocketAddr,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TransportError> {
         Ok(self.send_to(&data, target).await.map(|_| ())?)
     }
 

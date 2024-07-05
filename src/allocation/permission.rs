@@ -1,7 +1,7 @@
-//! TURN [Allocation] [Permission].
+//! [Allocation] [permission] definitions.
 //!
 //! [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-2.2
-//! [Permission]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+//! [permission]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
 
 use std::{collections::HashMap, net::IpAddr, sync::Arc};
 
@@ -10,26 +10,32 @@ use tokio::{
     time::{sleep, Duration, Instant},
 };
 
-/// The Permission Lifetime MUST be 300 seconds (= 5 minutes)[1].
+/// [Lifetime][1] of a [`Permission`].
+///
+/// > The Permission Lifetime MUST be 300 seconds (= 5 minutes).
 ///
 /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
 pub(crate) const PERMISSION_LIFETIME: Duration = Duration::from_secs(5 * 60);
 
-/// TURN [Allocation] [Permission].
+/// Representation of an [allocation] [permission].
 ///
-/// [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-2.2
-/// [Permission]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-2.2
+/// [permission]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+#[derive(Debug)]
 pub(crate) struct Permission {
-    /// [`IpAddr`] of this permission that is matched with the source IP
+    /// [`IpAddr`] of this [`Permission`] that is matched with the source IP
     /// address of the datagram received.
     ip: IpAddr,
 
-    /// Channel to the inner lifetime watching loop.
+    /// [`mpsc::Sender`] to the inner lifetime watching loop.
     reset_tx: mpsc::Sender<Duration>,
 }
 
 impl Permission {
-    /// Creates a new [`Permission`].
+    /// Creates a new [`Permission`] and [`spawn`]s a loop watching its
+    /// lifetime.
+    ///
+    /// [`spawn`]: tokio::spawn()
     pub(crate) fn new(
         ip: IpAddr,
         permissions: Arc<Mutex<HashMap<IpAddr, Self>>>,
@@ -61,12 +67,12 @@ impl Permission {
         Self { ip, reset_tx }
     }
 
-    /// Returns [`IpAddr`] of this [`Permission`].
+    /// Returns the [`IpAddr`] of this [`Permission`].
     pub(crate) const fn ip(&self) -> IpAddr {
         self.ip
     }
 
-    /// Updates [`Permission`]'s lifetime.
+    /// Updates the `lifetime` of this [`Permission`].
     pub(crate) async fn refresh(&self, lifetime: Duration) {
         _ = self.reset_tx.send(lifetime).await;
     }

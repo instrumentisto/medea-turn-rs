@@ -1,14 +1,13 @@
-//! TURN server [allocation].
+//! [Allocation] definitions.
 //!
-//! [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+//! [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
 
-mod allocation_manager;
 mod channel_bind;
+mod manager;
 mod permission;
 
 use std::{
     collections::HashMap,
-    fmt,
     marker::{Send, Sync},
     mem,
     net::{IpAddr, SocketAddr},
@@ -19,6 +18,7 @@ use std::{
 };
 
 use bytecodec::EncodeExt;
+use derive_more::Display;
 use rand::random;
 use stun_codec::{
     rfc5766::methods::DATA, Message, MessageClass, MessageEncoder,
@@ -42,91 +42,102 @@ use crate::{
 
 use self::{channel_bind::ChannelBind, permission::Permission};
 
-pub(crate) use allocation_manager::{Manager, ManagerConfig};
+pub(crate) use self::manager::{Config as ManagerConfig, Manager};
 
-/// Information about an allocation.
-#[derive(Debug, Clone)]
-pub struct AllocInfo {
-    /// [`FiveTuple`] of this allocation.
+/// 5-tuple uniquely identifying a UDP/TCP session.
+///
+/// Consists of:
+/// 1. source IP address
+/// 2. source port
+/// 3. destination IP address
+/// 4. destination port
+/// 5. transport protocol
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq)]
+#[display("{protocol}_{src_addr}_{dst_addr}")]
+pub struct FiveTuple {
+    /// Number of the transport protocol according to [IANA].
+    ///
+    /// [IANA]: https://tinyurl.com/iana-protocol-numbers
+    pub protocol: u8,
+
+    /// Source address.
+    pub src_addr: SocketAddr,
+
+    /// Destination address.
+    pub dst_addr: SocketAddr,
+}
+
+/// Information about an [allocation].
+///
+/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+#[derive(Clone, Debug)]
+pub struct Info {
+    /// [`FiveTuple`] of the [allocation].
+    ///
+    /// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
     pub five_tuple: FiveTuple,
 
-    /// Username of this allocation.
-    pub username: String,
+    /// [`Username`] of the [allocation].
+    ///
+    /// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+    pub username: Username,
 
-    /// Relayed bytes with this allocation.
+    /// Relayed bytes through the [allocation].
+    ///
+    /// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
     pub relayed_bytes: usize,
 }
 
-impl AllocInfo {
-    /// Creates a new [`AllocInfo`].
+impl Info {
+    /// Creates a new [`Info`] out of the provided parameters.
     #[must_use]
     pub const fn new(
         five_tuple: FiveTuple,
-        username: String,
+        username: Username,
         relayed_bytes: usize,
     ) -> Self {
         Self { five_tuple, username, relayed_bytes }
     }
 }
 
-/// The tuple (source IP address, source port, destination IP
-/// address, destination port, transport protocol).  A 5-tuple
-/// uniquely identifies a UDP/TCP session.
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub struct FiveTuple {
-    /// Transport protocol according to [IANA] protocol numbers.
-    ///
-    /// [IANA]: https://tinyurl.com/iana-protocol-numbers
-    pub protocol: u8,
-
-    /// Packet source address.
-    pub src_addr: SocketAddr,
-
-    /// Packet target address.
-    pub dst_addr: SocketAddr,
-}
-
-impl fmt::Display for FiveTuple {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}_{}", self.protocol, self.src_addr, self.dst_addr)
-    }
-}
-
-/// TURN server [Allocation].
+/// Representation of an [allocation].
 ///
-/// [Allocation]:https://datatracker.ietf.org/doc/html/rfc5766#section-5
+/// [allocation]:https://datatracker.ietf.org/doc/html/rfc5766#section-5
+#[derive(Debug)]
 pub(crate) struct Allocation {
-    /// Relay socket address.
+    /// Relay [`SocketAddr`].
     relay_addr: SocketAddr,
 
-    /// Allocated relay socket.
+    /// Allocated relay [`UdpSocket`].
     relay_socket: Arc<UdpSocket>,
 
-    /// [`FiveTuple`] this allocation is created with.
+    /// [`FiveTuple`] this [`Allocation`] is created for.
     five_tuple: FiveTuple,
 
-    /// Remote user ICE [`Username`].
+    /// [`Username`] of the remote [ICE] user.
+    ///
+    /// [ICE]: https://webrtcglossary.com/ice
     username: Username,
 
-    /// List of [`Permission`]s for this [`Allocation`]
+    /// List of [`Permission`]s for this [`Allocation`].
     permissions: Arc<Mutex<HashMap<IpAddr, Permission>>>,
 
-    /// This [`Allocation`] [`ChannelBind`]ings.
+    /// [`ChannelBind`]s of this [`Allocation`].
     channel_bindings: Arc<Mutex<HashMap<u16, ChannelBind>>>,
 
-    /// Channel to the internal loop used to update lifetime or drop
-    /// allocation.
+    /// [`mpsc::Sender`] to the internal loop of this [`Allocation`], used to
+    /// update its lifetime or stop it.
     refresh_tx: mpsc::Sender<Duration>,
 
-    /// Total number of relayed bytes.
+    /// Total number of relayed bytes through this [`Allocation`].
     relayed_bytes: AtomicUsize,
 
-    /// Injected into allocations to notify when allocation is closed.
-    alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
+    /// [`mpsc::Sender`] for notifying when this [`Allocation`] is closed.
+    alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
 impl Allocation {
-    /// Creates a new [`Allocation`].
+    /// Creates a new [`Allocation`] out of the provided parameters.
     pub(crate) fn new(
         turn_socket: Arc<dyn Conn + Send + Sync>,
         relay_socket: Arc<UdpSocket>,
@@ -134,7 +145,7 @@ impl Allocation {
         five_tuple: FiveTuple,
         lifetime: Duration,
         username: Username,
-        alloc_close_notify: Option<mpsc::Sender<AllocInfo>>,
+        alloc_close_notify: Option<mpsc::Sender<Info>>,
     ) -> Self {
         let (refresh_tx, refresh_rx) = mpsc::channel(1);
 
@@ -155,29 +166,29 @@ impl Allocation {
         this
     }
 
-    /// Returns whether underlying relay socket and transmission loop is alive.
-    pub(crate) fn alive(&self) -> bool {
+    /// Indicates whether the underlying relay socket and transmission loop is
+    /// alive.
+    pub(crate) fn is_alive(&self) -> bool {
         !self.refresh_tx.is_closed()
     }
 
-    /// Send the given data via associated relay socket.
+    /// Send the provided `data` via the associated relay socket.
     pub(crate) async fn relay(
         &self,
         data: &[u8],
         to: SocketAddr,
     ) -> Result<(), Error> {
-        if !self.alive() {
+        if !self.is_alive() {
             return Err(Error::NoAllocationFound);
         }
 
-        match self.relay_socket.send_to(data, to).await {
-            Ok(n) => {
-                _ = self.relayed_bytes.fetch_add(n, Ordering::AcqRel);
-
-                Ok(())
-            }
-            Err(err) => Err(Error::from(con::Error::from(err))),
-        }
+        let n = self
+            .relay_socket
+            .send_to(data, to)
+            .await
+            .map_err(con::TransportError::from)?;
+        _ = self.relayed_bytes.fetch_add(n, Ordering::AcqRel);
+        Ok(())
     }
 
     /// Returns [`SocketAddr`] of the associated relay socket.
@@ -185,9 +196,9 @@ impl Allocation {
         self.relay_addr
     }
 
-    /// Checks the Permission for the `addr`.
+    /// Checks the [`Permission`] for the provided [`SocketAddr`].
     pub(crate) async fn has_permission(&self, addr: &SocketAddr) -> bool {
-        if !self.alive() {
+        if !self.is_alive() {
             return false;
         }
 
@@ -196,7 +207,7 @@ impl Allocation {
 
     /// Adds a new [`Permission`] to this [`Allocation`].
     pub(crate) async fn add_permission(&self, ip: IpAddr) {
-        if !self.alive() {
+        if !self.is_alive() {
             return;
         }
 
@@ -214,21 +225,21 @@ impl Allocation {
         }
     }
 
-    /// Adds a new [`ChannelBind`] to this [`Allocation`], it also updates the
-    /// permissions needed for this [`ChannelBind`].
-    #[allow(clippy::significant_drop_tightening)] // false-positive
+    /// Adds a new [`ChannelBind`] to this [`Allocation`], also updating the
+    /// [`Permission`]s needed for this [`ChannelBind`].
+    #[allow(clippy::significant_drop_tightening)] // false positive
     pub(crate) async fn add_channel_bind(
         &self,
         number: u16,
         peer_addr: SocketAddr,
         lifetime: Duration,
     ) -> Result<(), Error> {
-        if !self.alive() {
+        if !self.is_alive() {
             return Err(Error::NoAllocationFound);
         }
 
-        // The channel number is not currently bound to a different transport
-        // address (same transport address is OK);
+        // The `ChannelNumber` is not currently bound to a different transport
+        // address (same transport address is OK).
         if let Some(addr) = self.get_channel_addr(&number).await {
             if addr != peer_addr {
                 return Err(Error::SameChannelDifferentPeer);
@@ -236,7 +247,7 @@ impl Allocation {
         }
 
         // The transport address is not currently bound to a different
-        // channel number.
+        // `ChannelNumber`.
         if let Some(n) = self.get_channel_number(&peer_addr).await {
             if number != n {
                 return Err(Error::SamePeerDifferentChannel);
@@ -249,7 +260,7 @@ impl Allocation {
 
             cb.refresh(lifetime).await;
 
-            // Channel binds also refresh permissions.
+            // `ChannelBind`s also refresh `Permission`s.
             self.add_permission(cb.peer().ip()).await;
         } else {
             let bind = ChannelBind::new(
@@ -261,30 +272,31 @@ impl Allocation {
 
             drop(channel_bindings.insert(number, bind));
 
-            // Channel binds also refresh permissions.
+            // `ChannelBind`s also refresh `Permission`s.
             self.add_permission(peer_addr.ip()).await;
         }
         Ok(())
     }
 
-    /// Gets the [`ChannelBind`]'s address by `number`.
+    /// Returns the [`ChannelBind`]'s address by the provided `number`.
     pub(crate) async fn get_channel_addr(
         &self,
         number: &u16,
     ) -> Option<SocketAddr> {
-        if !self.alive() {
+        if !self.is_alive() {
             return None;
         }
 
         self.channel_bindings.lock().await.get(number).map(ChannelBind::peer)
     }
 
-    /// Gets the [`ChannelBind`]'s number from this [`Allocation`] by `addr`.
+    /// Returns the [`ChannelBind`]'s number from this [`Allocation`] by its
+    /// `addr`ess.
     pub(crate) async fn get_channel_number(
         &self,
         addr: &SocketAddr,
     ) -> Option<u16> {
-        if !self.alive() {
+        if !self.is_alive() {
             return None;
         }
         self.channel_bindings
@@ -294,29 +306,38 @@ impl Allocation {
             .find_map(|b| (b.peer() == *addr).then_some(b.num()))
     }
 
-    /// Updates the allocations lifetime.
+    /// Updates the `lifetime` of this [`Allocation`].
     pub(crate) async fn refresh(&self, lifetime: Duration) {
         _ = self.refresh_tx.send(lifetime).await;
     }
 
-    ///  When the server receives a UDP datagram at a currently allocated
-    ///  relayed transport address, the server looks up the allocation
-    ///  associated with the relayed transport address.  The server then
-    ///  checks to see whether the set of permissions for the allocation allow
-    ///  the relaying of the UDP datagram as described in Section 8.
+    /// [`spawn`]s a relay handler of this [`Allocation`].
     ///
-    ///  If relaying is permitted, then the server checks if there is a
-    ///  channel bound to the peer that sent the UDP datagram (see
-    ///  Section 11).  If a channel is bound, then processing proceeds as
-    ///  described in Section 11.7.
+    /// See [Section 10.3][1]:
+    /// > When the server receives a UDP datagram at a currently allocated
+    /// > relayed transport address, the server looks up the allocation
+    /// > associated with the relayed transport address.  The server then
+    /// > checks to see whether the set of permissions for the allocation allow
+    /// > the relaying of the UDP datagram as described in [Section 8].
+    /// >
+    /// > If relaying is permitted, then the server checks if there is a
+    /// > channel bound to the peer that sent the UDP datagram (see
+    /// > [Section 11]).  If a channel is bound, then processing proceeds as
+    /// > described in [Section 11.7][2].
+    /// >
+    /// > If relaying is permitted but no channel is bound to the peer, then
+    /// > the server forms and sends a Data indication.  The Data indication
+    /// > MUST contain both an XOR-PEER-ADDRESS and a DATA attribute.  The DATA
+    /// > attribute is set to the value of the 'data octets' field from the
+    /// > datagram, and the XOR-PEER-ADDRESS attribute is set to the source
+    /// > transport address of the received UDP datagram.  The Data indication
+    /// > is then sent on the 5-tuple associated with the allocation.
     ///
-    ///  If relaying is permitted but no channel is bound to the peer, then
-    ///  the server forms and sends a Data indication.  The Data indication
-    ///  MUST contain both an XOR-PEER-ADDRESS and a DATA attribute.  The DATA
-    ///  attribute is set to the value of the 'data octets' field from the
-    ///  datagram, and the XOR-PEER-ADDRESS attribute is set to the source
-    ///  transport address of the received UDP datagram.  The Data indication
-    ///  is then sent on the 5-tuple associated with the allocation.
+    /// [`spawn`]: tokio::spawn()
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-10.3
+    /// [2]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.7
+    /// [Section 8]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+    /// [Section 11]: https://datatracker.ietf.org/doc/html/rfc5766#section-11
     #[allow(clippy::too_many_lines)]
     fn spawn_relay_handler(
         &self,
@@ -331,7 +352,7 @@ impl Allocation {
         let permissions = Arc::clone(&self.permissions);
 
         drop(tokio::spawn(async move {
-            log::trace!("listening on relay addr: {relay_addr}");
+            log::trace!("Listening on relay addr: {relay_addr}");
 
             let expired = sleep(lifetime);
             tokio::pin!(expired);
@@ -375,29 +396,29 @@ impl Allocation {
                 if let Some(number) = cb_number {
                     match ChannelData::encode(data, number) {
                         Ok(data) => {
-                            if let Err(err) = turn_socket
+                            if let Err(e) = turn_socket
                                 .send_to(data, five_tuple.src_addr)
                                 .await
                             {
-                                match err {
-                                    con::Error::TransportIsDead => {
+                                match e {
+                                    con::TransportError::TransportIsDead => {
                                         break;
                                     }
-                                    con::Error::Decode(_)
-                                    | con::Error::ChannelData(_)
-                                    | con::Error::Io(_) => {
+                                    con::TransportError::Decode(_)
+                                    | con::TransportError::ChannelData(_)
+                                    | con::TransportError::Io(_) => {
                                         log::warn!(
-                                            "Failed to send ChannelData from \
-                                            allocation {src_addr}: {err}",
+                                            "Failed to send `ChannelData` from \
+                                             `Allocation(scr: {src_addr}`: {e}",
                                         );
                                     }
                                 }
                             }
                         }
-                        Err(err) => {
+                        Err(e) => {
                             log::warn!(
-                                "Failed to send ChannelData from allocation \
-                                    {src_addr}: {err}"
+                                "Failed to send `ChannelData` from \
+                                 `Allocation(src: {src_addr})`: {e}",
                             );
                         }
                     };
@@ -407,8 +428,8 @@ impl Allocation {
 
                     if has_permission {
                         log::trace!(
-                            "relaying message from {src_addr} to client at {}",
-                            five_tuple.src_addr
+                            "Relaying message from {src_addr} to client at {}",
+                            five_tuple.src_addr,
                         );
 
                         let mut msg: Message<Attribute> = Message::new(
@@ -418,31 +439,33 @@ impl Allocation {
                         );
                         msg.add_attribute(XorPeerAddress::new(src_addr));
                         let Ok(data) = Data::new(data.to_vec()) else {
-                            log::error!("DataIndication is too long");
+                            log::error!("`DataIndication` is too long");
                             continue;
                         };
                         msg.add_attribute(data);
 
                         match MessageEncoder::new().encode_into_bytes(msg) {
                             Ok(encoded) => {
-                                if let Err(err) = turn_socket
+                                if let Err(e) = turn_socket
                                     .send_to(encoded, five_tuple.src_addr)
                                     .await
                                 {
                                     log::error!(
-                                        "Failed to send DataIndication from \
-                                        allocation {src_addr} {err}",
+                                        "Failed to send `DataIndication` from \
+                                         `Allocation(src: {src_addr})`: {e}",
                                     );
                                 }
                             }
                             Err(e) => {
-                                log::error!("DataIndication encode err: {e}");
+                                log::error!(
+                                    "`DataIndication` encoding failed: {e}",
+                                );
                             }
                         }
                     } else {
                         log::info!(
-                            "No Permission or Channel exists for {src_addr} on \
-                                allocation {relay_addr}"
+                            "No `Permission` or `ChannelBind` exists for \
+                             `{src_addr}` on `Allocation(relay: {relay_addr})`",
                         );
                     }
                 }
@@ -451,7 +474,8 @@ impl Allocation {
             drop(mem::take(&mut *permissions.lock().await));
 
             log::trace!(
-                "{five_tuple:?} allocation stopped, stop packet_handler",
+                "`Allocation(five_tuple: {five_tuple})` stopped, stop \
+                 `relay_handler`",
             );
         }));
     }
@@ -460,9 +484,9 @@ impl Allocation {
 impl Drop for Allocation {
     fn drop(&mut self) {
         if let Some(notify_tx) = self.alloc_close_notify.take() {
-            let info = AllocInfo {
+            let info = Info {
                 five_tuple: self.five_tuple,
-                username: self.username.name().to_owned(),
+                username: self.username.clone(),
                 relayed_bytes: self.relayed_bytes.load(Ordering::Acquire),
             };
 
@@ -474,17 +498,21 @@ impl Drop for Allocation {
 }
 
 #[cfg(test)]
-mod allocation_test {
-    use std::{net::Ipv4Addr, str::FromStr};
+mod spec {
+    use std::{
+        net::{Ipv4Addr, SocketAddr},
+        str::FromStr,
+        sync::Arc,
+    };
 
     use tokio::net::UdpSocket;
 
-    use super::*;
-
     use crate::{
-        attr::{ChannelNumber, PROTO_UDP},
+        attr::{ChannelNumber, Username, PROTO_UDP},
         server::DEFAULT_LIFETIME,
     };
+
+    use super::{Allocation, FiveTuple};
 
     impl Default for FiveTuple {
         fn default() -> Self {
@@ -497,7 +525,7 @@ mod allocation_test {
     }
 
     #[tokio::test]
-    async fn test_has_permission() {
+    async fn has_permission() {
         let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let relay_socket = Arc::clone(&turn_socket);
         let relay_addr = relay_socket.local_addr().unwrap();
@@ -520,17 +548,17 @@ mod allocation_test {
         a.add_permission(addr3.ip()).await;
 
         let found_p1 = a.has_permission(&addr1).await;
-        assert!(found_p1, "Should keep the first one.");
+        assert!(found_p1, "should keep the first one");
 
         let found_p2 = a.has_permission(&addr2).await;
-        assert!(found_p2, "Second one should be ignored.");
+        assert!(found_p2, "second one should be ignored");
 
         let found_p3 = a.has_permission(&addr3).await;
-        assert!(found_p3, "Permission with another IP should be found");
+        assert!(found_p3, "`Permission` with another IP should be found");
     }
 
     #[tokio::test]
-    async fn test_add_permission() {
+    async fn add_permission() {
         let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let relay_socket = Arc::clone(&turn_socket);
         let relay_addr = relay_socket.local_addr().unwrap();
@@ -548,11 +576,11 @@ mod allocation_test {
         a.add_permission(addr.ip()).await;
 
         let found_p = a.has_permission(&addr).await;
-        assert!(found_p, "Should keep the first one.");
+        assert!(found_p, "should keep the first one");
     }
 
     #[tokio::test]
-    async fn test_get_channel_by_number() {
+    async fn get_channel_by_number() {
         let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let relay_socket = Arc::clone(&turn_socket);
         let relay_addr = relay_socket.local_addr().unwrap();
@@ -578,14 +606,11 @@ mod allocation_test {
 
         let not_exist_channel =
             a.get_channel_addr(&(ChannelNumber::MIN + 1)).await;
-        assert!(
-            not_exist_channel.is_none(),
-            "should be nil for not existed channel."
-        );
+        assert!(not_exist_channel.is_none(), "found, but shouldn't");
     }
 
     #[tokio::test]
-    async fn test_get_channel_by_addr() {
+    async fn get_channel_by_addr() {
         let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let relay_socket = Arc::clone(&turn_socket);
         let relay_addr = relay_socket.local_addr().unwrap();
@@ -610,14 +635,11 @@ mod allocation_test {
         assert_eq!(ChannelNumber::MIN, exist_channel_number);
 
         let not_exist_channel = a.get_channel_number(&addr2).await;
-        assert!(
-            not_exist_channel.is_none(),
-            "should be nil for not existed channel."
-        );
+        assert!(not_exist_channel.is_none(), "found, but shouldn't");
     }
 
     #[tokio::test]
-    async fn test_allocation_close() {
+    async fn closing() {
         let turn_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let relay_socket = Arc::clone(&turn_socket);
         let relay_addr = relay_socket.local_addr().unwrap();
@@ -631,20 +653,16 @@ mod allocation_test {
             None,
         );
 
-        // add channel
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
-
         a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_LIFETIME)
             .await
             .unwrap();
-
-        // add permission
         a.add_permission(addr.ip()).await;
     }
 }
 
 #[cfg(test)]
-mod five_tuple_test {
+mod five_tuple_spec {
     use std::net::SocketAddr;
 
     use crate::{
@@ -653,7 +671,7 @@ mod five_tuple_test {
     };
 
     #[test]
-    fn test_five_tuple_equal() {
+    fn equality() {
         let src_addr1: SocketAddr =
             "0.0.0.0:3478".parse::<SocketAddr>().unwrap();
         let src_addr2: SocketAddr =
@@ -664,7 +682,7 @@ mod five_tuple_test {
         let dst_addr2: SocketAddr =
             "0.0.0.0:3481".parse::<SocketAddr>().unwrap();
 
-        let tests = vec![
+        let tests = [
             (
                 "Equal",
                 true,
@@ -722,12 +740,11 @@ mod five_tuple_test {
                 },
             ),
         ];
-
         for (name, expect, a, b) in tests {
             let fact = a == b;
             assert_eq!(
                 expect, fact,
-                "{name}: {a}, {b} equal check should be {expect}, but {fact}"
+                "{name}: {a}, {b} equal check should be {expect}, but {fact}",
             );
         }
     }
