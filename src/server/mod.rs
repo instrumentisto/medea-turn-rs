@@ -1,10 +1,10 @@
 //! TURN server implementation.
 
-mod config;
 mod request;
 
 use std::{collections::HashMap, sync::Arc};
 
+use derive_more::Debug;
 use tokio::{
     sync::{
         broadcast::{
@@ -18,10 +18,9 @@ use tokio::{
 
 use crate::{
     allocation::{FiveTuple, Info, Manager, ManagerConfig},
-    AuthHandler, Error,
+    transport::Transport,
+    AuthHandler, Error, RelayAllocator,
 };
-
-pub use self::config::Config;
 
 /// `DEFAULT_LIFETIME` in RFC 5766 is 10 minutes.
 ///
@@ -30,6 +29,33 @@ pub(crate) const DEFAULT_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
 /// MTU used for UDP connections.
 pub(crate) const INBOUND_MTU: usize = 1500;
+
+/// [`Config`] configures the TURN Server.
+#[derive(Debug)]
+pub struct Config<A> {
+    /// `conn_configs` are a list of all the turn listeners.
+    /// Each listener can have custom behavior around the creation of Relays.
+    #[debug("{:?}", connections.iter()
+        .map(|c| (c.local_addr(), c.proto()))
+        .collect::<Vec<_>>())]
+    pub connections: Vec<Arc<dyn Transport + Send + Sync>>,
+
+    /// Relay connections allocator.
+    pub relay_addr_generator: RelayAllocator,
+
+    /// `realm` sets the realm for this server
+    pub realm: String,
+
+    /// `auth_handler` is a callback used to handle incoming auth requests,
+    /// allowing users to customize Pion TURN with custom behavior.
+    pub auth_handler: Arc<A>,
+
+    /// Sets the lifetime of channel binding.
+    pub channel_bind_lifetime: Duration,
+
+    /// To receive notify on allocation close event, with metrics data.
+    pub alloc_close_notify: Option<mpsc::Sender<Info>>,
+}
 
 /// Server is an instance of the TURN Server
 #[derive(Debug)]

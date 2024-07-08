@@ -1,4 +1,8 @@
-//! STUN and TURN attributes used by the server.
+//! [STUN] and [TURN] attributes used by a [`Server`].
+//!
+//! [`Server`]: crate::Server
+//! [STUN]: https://en.wikipedia.org/wiki/STUN
+//! [TURN]: https://en.wikipedia.org/wiki/TURN
 
 use stun_codec::define_attribute_enums;
 

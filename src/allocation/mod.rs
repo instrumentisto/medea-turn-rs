@@ -34,15 +34,16 @@ use crate::{
     allocation::permission::PERMISSION_LIFETIME,
     attr::{Attribute, Data, Username, XorPeerAddress},
     chandata::ChannelData,
-    con,
-    con::Conn,
     server::INBOUND_MTU,
-    Error,
+    transport, Error, Transport,
 };
 
 use self::{channel_bind::ChannelBind, permission::Permission};
 
 pub(crate) use self::manager::{Config as ManagerConfig, Manager};
+
+/// Shortcut for a [`Transport`] trait object.
+type DynTransport = Arc<dyn Transport + Send + Sync>;
 
 /// 5-tuple uniquely identifying a UDP/TCP session.
 ///
@@ -139,7 +140,7 @@ pub(crate) struct Allocation {
 impl Allocation {
     /// Creates a new [`Allocation`] out of the provided parameters.
     pub(crate) fn new(
-        turn_socket: Arc<dyn Conn + Send + Sync>,
+        turn_socket: Arc<dyn Transport + Send + Sync>,
         relay_socket: Arc<UdpSocket>,
         relay_addr: SocketAddr,
         five_tuple: FiveTuple,
@@ -186,7 +187,7 @@ impl Allocation {
             .relay_socket
             .send_to(data, to)
             .await
-            .map_err(con::TransportError::from)?;
+            .map_err(transport::Error::from)?;
         _ = self.relayed_bytes.fetch_add(n, Ordering::AcqRel);
         Ok(())
     }
@@ -343,7 +344,7 @@ impl Allocation {
         &self,
         mut refresh_rx: mpsc::Receiver<Duration>,
         lifetime: Duration,
-        turn_socket: Arc<dyn Conn + Send + Sync>,
+        turn_socket: Arc<dyn Transport + Send + Sync>,
     ) {
         let five_tuple = self.five_tuple;
         let relay_addr = self.relay_addr;
@@ -401,12 +402,12 @@ impl Allocation {
                                 .await
                             {
                                 match e {
-                                    con::TransportError::TransportIsDead => {
+                                    transport::Error::TransportIsDead => {
                                         break;
                                     }
-                                    con::TransportError::Decode(_)
-                                    | con::TransportError::ChannelData(_)
-                                    | con::TransportError::Io(_) => {
+                                    transport::Error::Decode(_)
+                                    | transport::Error::ChannelData(_)
+                                    | transport::Error::Io(_) => {
                                         log::warn!(
                                             "Failed to send `ChannelData` from \
                                              `Allocation(scr: {src_addr}`: {e}",

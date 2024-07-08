@@ -3,7 +3,7 @@ name = "medea-turn"
 version = "0.7.0-dev"
 authors = ["Instrumentisto Team <developer@instrumentisto.com>"]
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.74"
 description = "TURN implementation used by Medea media server."
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/instrumentisto/medea-turn-rs"
@@ -14,7 +14,7 @@ publish = false
 async-trait = "0.1"
 bytecodec = "0.4.15"
 bytes = "1.6"
-derive_more = { version = "1.0.0-beta.6", features = ["display", "error", "from"] }
+derive_more = { version = "1.0.0-beta.6", features = ["debug", "display", "error", "from"] }
 futures = "0.3"
 log = "0.4"
 rand = "0.8"

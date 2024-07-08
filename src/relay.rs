@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::net::UdpSocket;
 
-use crate::{con, Error};
+use crate::{transport, Error};
 
 /// [`RelayAllocator`] is used to generate a Relay Address when creating an
 /// allocation.
@@ -55,7 +55,7 @@ impl RelayAllocator {
                 let port = self.min_port
                     + rand::random::<u16>()
                         % (self.max_port - self.min_port + 1);
-                let addr = con::lookup_host(
+                let addr = transport::lookup_host(
                     use_ipv4,
                     &format!("{}:{}", self.address, port),
                 )
@@ -65,25 +65,23 @@ impl RelayAllocator {
                 };
 
                 let mut relay_addr =
-                    conn.local_addr().map_err(con::TransportError::from)?;
+                    conn.local_addr().map_err(transport::Error::from)?;
                 relay_addr.set_ip(self.relay_address);
                 return Ok((Arc::new(conn), relay_addr));
             }
 
             Err(Error::MaxRetriesExceeded)
         } else {
-            let addr = con::lookup_host(
+            let addr = transport::lookup_host(
                 use_ipv4,
                 &format!("{}:{}", self.address, requested_port),
             )
             .await?;
             let conn = Arc::new(
-                UdpSocket::bind(addr)
-                    .await
-                    .map_err(con::TransportError::from)?,
+                UdpSocket::bind(addr).await.map_err(transport::Error::from)?,
             );
             let mut relay_addr =
-                conn.local_addr().map_err(con::TransportError::from)?;
+                conn.local_addr().map_err(transport::Error::from)?;
             relay_addr.set_ip(self.relay_address);
 
             Ok((conn, relay_addr))

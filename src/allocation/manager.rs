@@ -3,17 +3,15 @@
 //! [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
 
 use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{atomic::Ordering, Arc},
+    collections::HashMap, net::SocketAddr, sync::atomic::Ordering,
     time::Duration,
 };
 
 use tokio::sync::mpsc;
 
-use crate::{attr::Username, con::Conn, Error, RelayAllocator};
+use crate::{attr::Username, Error, RelayAllocator};
 
-use super::{Allocation, FiveTuple, Info};
+use super::{Allocation, DynTransport, FiveTuple, Info};
 
 /// Configuration parameters of a [`Manager`].
 #[derive(Debug)]
@@ -79,7 +77,7 @@ impl Manager {
     pub(crate) async fn create_allocation(
         &mut self,
         five_tuple: FiveTuple,
-        turn_socket: Arc<dyn Conn + Send + Sync>,
+        turn_socket: DynTransport,
         requested_port: u16,
         lifetime: Duration,
         username: Username,
@@ -167,12 +165,11 @@ mod spec {
     use crate::{
         attr::{Attribute, ChannelNumber, Data, Username},
         chandata::ChannelData,
-        con::Conn,
         server::DEFAULT_LIFETIME,
         Error, FiveTuple, RelayAllocator,
     };
 
-    use super::{Config, Manager};
+    use super::{Config, DynTransport, Manager};
 
     /// Creates a new [`Manager`] for testing purposes.
     fn create_manager() -> Manager {
@@ -307,7 +304,7 @@ mod spec {
 
     #[tokio::test]
     async fn errors_on_duplicate_five_tuple() {
-        let turn_socket: Arc<dyn Conn + Send + Sync> =
+        let turn_socket: DynTransport =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let mut m = create_manager();
@@ -315,7 +312,7 @@ mod spec {
         _ = m
             .create_allocation(
                 five_tuple,
-                Arc::clone(&turn_socket),
+                DynTransport::clone(&turn_socket),
                 0,
                 DEFAULT_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
@@ -327,7 +324,7 @@ mod spec {
         let res = m
             .create_allocation(
                 five_tuple,
-                Arc::clone(&turn_socket),
+                DynTransport::clone(&turn_socket),
                 0,
                 DEFAULT_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
@@ -340,7 +337,7 @@ mod spec {
 
     #[tokio::test]
     async fn deletes_allocation() {
-        let turn_socket: Arc<dyn Conn + Send + Sync> =
+        let turn_socket: DynTransport =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let mut m = create_manager();
@@ -348,7 +345,7 @@ mod spec {
         _ = m
             .create_allocation(
                 five_tuple,
-                Arc::clone(&turn_socket),
+                DynTransport::clone(&turn_socket),
                 0,
                 DEFAULT_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
@@ -372,7 +369,7 @@ mod spec {
 
     #[tokio::test]
     async fn allocations_timeout() {
-        let turn_socket: Arc<dyn Conn + Send + Sync> =
+        let turn_socket: DynTransport =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let mut m = create_manager();
@@ -384,7 +381,7 @@ mod spec {
             _ = m
                 .create_allocation(
                     five_tuple,
-                    Arc::clone(&turn_socket),
+                    DynTransport::clone(&turn_socket),
                     0,
                     lifetime,
                     Username::new(String::from("user")).unwrap(),
@@ -422,7 +419,7 @@ mod spec {
 
     #[tokio::test]
     async fn deletes_allocation_by_username() {
-        let turn_socket: Arc<dyn Conn + Send + Sync> =
+        let turn_socket: DynTransport =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let mut m = create_manager();
@@ -432,7 +429,7 @@ mod spec {
         _ = m
             .create_allocation(
                 five_tuple1,
-                Arc::clone(&turn_socket),
+                DynTransport::clone(&turn_socket),
                 0,
                 DEFAULT_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
@@ -443,7 +440,7 @@ mod spec {
         _ = m
             .create_allocation(
                 five_tuple2,
-                Arc::clone(&turn_socket),
+                DynTransport::clone(&turn_socket),
                 0,
                 DEFAULT_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
@@ -454,7 +451,7 @@ mod spec {
         _ = m
             .create_allocation(
                 five_tuple3,
-                Arc::clone(&turn_socket),
+                DynTransport::clone(&turn_socket),
                 0,
                 DEFAULT_LIFETIME,
                 Username::new(String::from("user2")).unwrap(),

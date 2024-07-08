@@ -149,9 +149,9 @@
 mod allocation;
 mod attr;
 mod chandata;
-pub mod con;
 mod relay;
 mod server;
+pub mod transport;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -159,6 +159,7 @@ use derive_more::{Display, Error as StdError, From};
 
 #[cfg(test)]
 pub(crate) use self::allocation::Allocation;
+pub(crate) use self::transport::Transport;
 pub use self::{
     allocation::{FiveTuple, Info as AllocationInfo},
     relay::RelayAllocator,
@@ -300,5 +301,5 @@ pub enum Error {
 
     /// Failed to encode message.
     #[display("Transport error: {_0}")]
-    Transport(con::TransportError),
+    Transport(transport::Error),
 }

@@ -36,9 +36,9 @@ use crate::{
         XorRelayAddress, PROTO_UDP,
     },
     chandata::ChannelData,
-    con,
-    con::{Conn, Request},
     server::DEFAULT_LIFETIME,
+    transport,
+    transport::{Request, Transport},
     AuthHandler, Error,
 };
 
@@ -55,7 +55,7 @@ const NONCE_LIFETIME: Duration = Duration::from_secs(3600);
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_message(
     msg: Request,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     five_tuple: FiveTuple,
     server_realm: &str,
     channel_bind_lifetime: Duration,
@@ -174,7 +174,7 @@ async fn handle_data_packet(
 #[allow(clippy::too_many_lines)]
 async fn handle_allocate_request(
     msg: Message<Attribute>,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &mut Manager,
     five_tuple: FiveTuple,
     uname: Username,
@@ -403,7 +403,7 @@ async fn handle_allocate_request(
 async fn authenticate_request(
     msg: &Message<Attribute>,
     auth_handler: &(impl AuthHandler + Send + Sync),
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     nonces: &mut HashMap<String, Instant>,
     five_tuple: FiveTuple,
     realm: &str,
@@ -487,9 +487,9 @@ async fn authenticate_request(
 }
 
 /// Sends a [`MessageClass::SuccessResponse`] message with a
-/// [`XorMappedAddress`] attribute to the given [`Conn`].
+/// [`XorMappedAddress`] attribute to the given [`Transport`].
 async fn handle_binding_request(
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     five_tuple: FiveTuple,
 ) -> Result<(), Error> {
     log::trace!("received BindingRequest from {}", five_tuple.src_addr);
@@ -512,7 +512,7 @@ async fn handle_binding_request(
 /// [Refresh Request]: https://datatracker.ietf.org/doc/html/rfc5766#section-7.2
 async fn handle_refresh_request(
     msg: Message<Attribute>,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &mut Manager,
     five_tuple: FiveTuple,
     uname: Username,
@@ -576,7 +576,7 @@ async fn handle_refresh_request(
 /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-9.2
 async fn handle_create_permission_request(
     msg: Message<Attribute>,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &mut Manager,
     five_tuple: FiveTuple,
     uname: Username,
@@ -678,7 +678,7 @@ async fn handle_send_indication(
 #[allow(clippy::too_many_arguments)]
 async fn handle_channel_bind_request(
     msg: Message<Attribute>,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &mut Manager,
     five_tuple: FiveTuple,
     channel_bind_lifetime: Duration,
@@ -759,7 +759,7 @@ async fn handle_channel_bind_request(
 async fn respond_with_nonce(
     msg: &Message<Attribute>,
     response_code: ErrorCode,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     realm: &str,
     five_tuple: FiveTuple,
     nonces: &mut HashMap<String, Instant>,
@@ -787,10 +787,10 @@ async fn respond_with_nonce(
 }
 
 /// Encodes and sends the provided [`Message`] to the given [`SocketAddr`]
-/// via given [`Conn`].
+/// via given [`Transport`].
 async fn send_to(
     msg: Message<Attribute>,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     dst: SocketAddr,
 ) -> Result<(), Error> {
     let bytes = MessageEncoder::new()
@@ -798,7 +798,7 @@ async fn send_to(
         .map_err(|e| Error::Encode(*e.kind()))?;
 
     match conn.send_to(bytes, dst).await {
-        Ok(()) | Err(con::TransportError::TransportIsDead) => Ok(()),
+        Ok(()) | Err(transport::Error::TransportIsDead) => Ok(()),
         Err(err) => Err(Error::from(err)),
     }
 }
@@ -807,7 +807,7 @@ async fn send_to(
 async fn respond_with_err(
     req: &Message<Attribute>,
     err: impl Into<ErrorCode>,
-    conn: &Arc<dyn Conn + Send + Sync>,
+    conn: &Arc<dyn Transport + Send + Sync>,
     dst: SocketAddr,
 ) -> Result<(), Error> {
     let mut err_msg = Message::new(
@@ -913,7 +913,7 @@ mod request_test {
 
     #[tokio::test]
     async fn test_allocation_lifetime_deletion_zero_lifetime() {
-        let conn: Arc<dyn Conn + Send + Sync> =
+        let conn: Arc<dyn Transport + Send + Sync> =
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let mut allocation_manager = Manager::new(ManagerConfig {
