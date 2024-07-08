@@ -1,7 +1,4 @@
-//! [`RelayAllocator`] is used to create relay transports wit the given
-//! configuration.
-
-#![allow(clippy::module_name_repetitions)]
+//! Relay definitions.
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -11,37 +8,37 @@ use tokio::net::UdpSocket;
 
 use crate::{transport, Error};
 
-/// [`RelayAllocator`] is used to generate a Relay Address when creating an
-/// allocation.
+/// Generator of relay addresses when creating an [allocation].
+///
+/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
 #[derive(Clone, Debug)]
-pub struct RelayAllocator {
-    /// `relay_address` is the IP returned to the user when the relay is
-    /// created.
+pub struct Allocator {
+    /// [`IpAddr`] returned to the user when a relay is created.
     pub relay_address: IpAddr,
 
-    /// `min_port` the minimum port to allocate.
+    /// Minimum (inclusive) port to allocate.
     pub min_port: u16,
 
-    /// `max_port` the maximum (inclusive) port to allocate.
+    /// Maximum (inclusive) port to allocate.
     pub max_port: u16,
 
-    /// `max_retries` the amount of tries to allocate a random port in the
-    /// defined range.
+    /// Amount of tries to allocate a random port in the allowed range.
     pub max_retries: u16,
 
-    /// `address` is passed to Listen/ListenPacket when creating the Relay.
+    /// Address passed when creating a relay.
     pub address: String,
 }
 
-impl RelayAllocator {
+impl Allocator {
     /// Allocates a new relay connection.
     ///
     /// # Errors
     ///
-    /// With [`Error::MaxRetriesExceeded`] if the requested port is `0` and
-    /// failed to find a free port in the specified maximum retries.
+    /// - With [`Error::MaxRetriesExceeded`] if the requested port is `0` and
+    /// failed to find a free port in the specified [`max_retries`].
+    /// - With [`Error::Transport`] if failed to bind to the specified port.
     ///
-    /// With [`Error::Transport`] if failed to bind to the specified port.
+    /// [`max_retries`]: Allocator::max_retries
     pub async fn allocate_conn(
         &self,
         use_ipv4: bool,
@@ -57,7 +54,7 @@ impl RelayAllocator {
                         % (self.max_port - self.min_port + 1);
                 let addr = transport::lookup_host(
                     use_ipv4,
-                    &format!("{}:{}", self.address, port),
+                    &format!("{}:{port}", self.address),
                 )
                 .await?;
                 let Ok(conn) = UdpSocket::bind(addr).await else {
@@ -74,7 +71,7 @@ impl RelayAllocator {
         } else {
             let addr = transport::lookup_host(
                 use_ipv4,
-                &format!("{}:{}", self.address, requested_port),
+                &format!("{}:{requested_port}", self.address),
             )
             .await?;
             let conn = Arc::new(

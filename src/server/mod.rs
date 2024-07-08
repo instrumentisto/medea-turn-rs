@@ -18,8 +18,9 @@ use tokio::{
 
 use crate::{
     allocation::{FiveTuple, Info, Manager, ManagerConfig},
+    relay,
     transport::Transport,
-    AuthHandler, Error, RelayAllocator,
+    AuthHandler, Error,
 };
 
 /// `DEFAULT_LIFETIME` in RFC 5766 is 10 minutes.
@@ -41,7 +42,7 @@ pub struct Config<A> {
     pub connections: Vec<Arc<dyn Transport + Send + Sync>>,
 
     /// Relay connections allocator.
-    pub relay_addr_generator: RelayAllocator,
+    pub relay_addr_generator: relay::Allocator,
 
     /// `realm` sets the realm for this server
     pub realm: String,

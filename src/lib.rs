@@ -149,7 +149,7 @@
 mod allocation;
 mod attr;
 mod chandata;
-mod relay;
+pub mod relay;
 mod server;
 pub mod transport;
 
@@ -162,7 +162,6 @@ pub(crate) use self::allocation::Allocation;
 pub(crate) use self::transport::Transport;
 pub use self::{
     allocation::{FiveTuple, Info as AllocationInfo},
-    relay::RelayAllocator,
     server::{Config, Server},
 };
 

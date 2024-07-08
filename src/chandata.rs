@@ -1,4 +1,6 @@
-//! [`ChannelData`] message implementation.
+//! [TURN ChannelData Message][1] implementation.
+//!
+//! [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
 
 use derive_more::{Display, Error};
 
@@ -11,68 +13,62 @@ const PADDING: usize = 4;
 /// [Channel Number] field size.
 ///
 /// [Channel Number]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-const CHANNEL_DATA_NUMBER_SIZE: usize = 2;
+const NUMBER_SIZE: usize = 2;
 
 /// [Length] field size.
 ///
 /// [Length]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-const CHANNEL_DATA_LENGTH_SIZE: usize = 2;
+const LENGTH_SIZE: usize = 2;
 
-/// [ChannelData] message header size.
-///
-/// [ChannelData]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-const CHANNEL_DATA_HEADER_SIZE: usize =
-    CHANNEL_DATA_LENGTH_SIZE + CHANNEL_DATA_NUMBER_SIZE;
-
-/// TURN [ChannelData][1] format error.
+/// [ChannelData Message][1] header size.
 ///
 /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-#[derive(Clone, Copy, Debug, Display, Error, Eq, PartialEq)]
-pub enum FormatError {
-    /// Failed to handle channel data since channel number is incorrect.
-    #[display("channel number not in [0x4000, 0x7FFF]")]
-    InvalidChannelNumber,
+const HEADER_SIZE: usize = LENGTH_SIZE + NUMBER_SIZE;
 
-    /// Failed to handle channel data cause of incorrect message length.
-    #[display("channelData length != len(Data)")]
-    BadChannelDataLength,
-}
-
-/// [`ChannelData`] represents the `ChannelData` Message defined in
-/// [RFC 5766](https://www.rfc-editor.org/rfc/rfc5766#section-11.4).
+/// Representation of [TURN ChannelData Message][1] defined in [RFC 5766].
+///
+/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+/// [RFC 5766]: https://www.rfc-editor.org/rfc/rfc5766
 #[derive(Debug)]
 pub struct ChannelData {
-    /// Parsed [`ChannelData`] [Channel Number][1].
+    /// Parsed [Channel Number][1].
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
     number: u16,
 
-    /// Parsed [`ChannelData`] payload.
+    /// Parsed payload.
     data: Vec<u8>,
 }
 
 impl ChannelData {
-    /// Returns `true` if `buf` looks like the `ChannelData` Message.
-    #[allow(clippy::missing_asserts_for_indexing)] // Length is checked
-    pub(crate) fn is_channel_data(buf: &[u8]) -> bool {
-        if buf.len() < CHANNEL_DATA_HEADER_SIZE {
+    /// Checks whether the provided `data` represents a [`ChannelData`] message.
+    pub(crate) fn is_channel_data(data: &[u8]) -> bool {
+        // PANIC: Indexing is OK here, since the length is checked with the
+        //        first `if` expression.
+        #![allow(clippy::missing_asserts_for_indexing)] // false positive
+
+        if data.len() < HEADER_SIZE {
             return false;
         }
         let len = usize::from(u16::from_be_bytes([
-            buf[CHANNEL_DATA_NUMBER_SIZE],
-            buf[CHANNEL_DATA_NUMBER_SIZE + 1],
+            data[NUMBER_SIZE],
+            data[NUMBER_SIZE + 1],
         ]));
 
-        if len > buf[CHANNEL_DATA_HEADER_SIZE..].len() {
+        if len > data[HEADER_SIZE..].len() {
             return false;
         }
 
-        ChannelNumber::new(u16::from_be_bytes([buf[0], buf[1]])).is_ok()
+        ChannelNumber::new(u16::from_be_bytes([data[0], data[1]])).is_ok()
     }
 
-    /// Decodes the given raw message as [`ChannelData`].
+    /// Decodes the provided `raw` message as a [`ChannelData`] message.
+    ///
+    /// # Errors
+    ///
+    /// See the [`FormatError`] for details.
     pub(crate) fn decode(mut raw: Vec<u8>) -> Result<Self, FormatError> {
-        if raw.len() < CHANNEL_DATA_HEADER_SIZE {
+        if raw.len() < HEADER_SIZE {
             return Err(FormatError::BadChannelDataLength);
         }
 
@@ -82,16 +78,16 @@ impl ChannelData {
         }
 
         let l = usize::from(u16::from_be_bytes([
-            raw[CHANNEL_DATA_NUMBER_SIZE],
-            raw[CHANNEL_DATA_NUMBER_SIZE + 1],
+            raw[NUMBER_SIZE],
+            raw[NUMBER_SIZE + 1],
         ]));
 
-        if l > raw[CHANNEL_DATA_HEADER_SIZE..].len() {
+        if l > raw[HEADER_SIZE..].len() {
             return Err(FormatError::BadChannelDataLength);
         }
 
         // Discard header and padding.
-        drop(raw.drain(0..CHANNEL_DATA_HEADER_SIZE));
+        drop(raw.drain(0..HEADER_SIZE));
         if l != raw.len() {
             raw.truncate(l);
         }
@@ -99,44 +95,44 @@ impl ChannelData {
         Ok(Self { data: raw, number })
     }
 
-    /// Returns [`ChannelData`] [Channel Number][1].
+    /// Returns payload of this [`ChannelData`] message.
+    pub(crate) fn data(self) -> Vec<u8> {
+        self.data
+    }
+
+    /// Returns [Channel Number][1] of this [`ChannelData`] message.
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
     pub(crate) const fn num(&self) -> u16 {
         self.number
     }
 
-    /// Encodes the provided [`ChannelData`] payload and channel number to
-    /// bytes.
+    /// Encodes the provided `payload` and [Channel Number][1] as
+    /// [`ChannelData`] message bytes.
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
     pub(crate) fn encode(
         payload: &[u8],
         chan_num: u16,
     ) -> Result<Vec<u8>, FormatError> {
-        let length = CHANNEL_DATA_HEADER_SIZE + payload.len();
+        let length = HEADER_SIZE + payload.len();
         let padded_length = nearest_padded_value_length(length);
 
-        #[allow(clippy::map_err_ignore)]
+        #[allow(clippy::map_err_ignore)] // intentional
         let len = u16::try_from(payload.len())
             .map_err(|_| FormatError::BadChannelDataLength)?;
 
         let mut encoded = vec![0u8; padded_length];
 
-        encoded[..CHANNEL_DATA_NUMBER_SIZE]
-            .copy_from_slice(&chan_num.to_be_bytes());
-        encoded[CHANNEL_DATA_NUMBER_SIZE..CHANNEL_DATA_HEADER_SIZE]
-            .copy_from_slice(&len.to_be_bytes());
-        encoded[CHANNEL_DATA_HEADER_SIZE..length].copy_from_slice(payload);
+        encoded[..NUMBER_SIZE].copy_from_slice(&chan_num.to_be_bytes());
+        encoded[NUMBER_SIZE..HEADER_SIZE].copy_from_slice(&len.to_be_bytes());
+        encoded[HEADER_SIZE..length].copy_from_slice(payload);
 
         Ok(encoded)
     }
-
-    /// Returns [`ChannelData`] payload.
-    pub(crate) fn data(self) -> Vec<u8> {
-        self.data
-    }
 }
 
-/// Calculates nearest padded length for the [`ChannelData`].
+/// Calculates a nearest padded length for a [`ChannelData`] message.
 pub(crate) const fn nearest_padded_value_length(l: usize) -> usize {
     let mut n = PADDING * (l / PADDING);
     if n < l {
@@ -145,28 +141,43 @@ pub(crate) const fn nearest_padded_value_length(l: usize) -> usize {
     n
 }
 
+/// Possible errors of a [`ChannelData`] message format.
+#[derive(Clone, Copy, Debug, Display, Error, Eq, PartialEq)]
+pub enum FormatError {
+    /// [Channel Number][1] is incorrect.
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    #[display("Channel Number not in [0x4000, 0x7FFF]")]
+    InvalidChannelNumber,
+
+    /// Incorrect message length.
+    #[display("Invalid `ChannelData` length")]
+    BadChannelDataLength,
+}
+
 #[cfg(test)]
-mod chandata_test {
-    use super::*;
+mod spec {
+    use crate::attr::ChannelNumber;
+
+    use super::{ChannelData, FormatError};
 
     #[test]
-    fn test_channel_data_encode() {
+    fn encodes() {
         let encoded =
             ChannelData::encode(&[1, 2, 3, 4], ChannelNumber::MIN + 1).unwrap();
         let decoded = ChannelData::decode(encoded.clone()).unwrap();
 
         assert!(
             ChannelData::is_channel_data(&encoded),
-            "unexpected IsChannelData"
+            "wrong `is_channel_data`",
         );
-
-        assert_eq!(vec![1, 2, 3, 4], decoded.data, "not equal");
-        assert_eq!(ChannelNumber::MIN + 1, decoded.number, "not equal");
+        assert_eq!(vec![1, 2, 3, 4], decoded.data, "wrong decoded data");
+        assert_eq!(ChannelNumber::MIN + 1, decoded.number, "wrong number");
     }
 
     #[test]
-    fn test_channel_data_equal() {
-        let tests = vec![
+    fn encoded_equality() {
+        let tests = [
             (
                 "equal",
                 ChannelData { number: ChannelNumber::MIN, data: vec![1, 2, 3] },
@@ -202,13 +213,14 @@ mod chandata_test {
         for (name, a, b, r) in tests {
             let v = ChannelData::encode(&a.data, a.number)
                 == ChannelData::encode(&b.data, b.number);
-            assert_eq!(v, r, "unexpected: ({name}) {r} != {r}");
+
+            assert_eq!(v, r, "wrong equality of {name}");
         }
     }
 
     #[test]
-    fn test_channel_data_decode() {
-        let tests = vec![
+    fn fails_decoding_correctly() {
+        let tests = [
             ("small", vec![1, 2, 3], FormatError::BadChannelDataLength),
             (
                 "zeroes",
@@ -226,29 +238,25 @@ mod chandata_test {
                 FormatError::BadChannelDataLength,
             ),
         ];
-
         for (name, buf, want_err) in tests {
-            if let Err(err) = ChannelData::decode(buf) {
-                assert_eq!(
-                    want_err, err,
-                    "unexpected: ({name}) {want_err} != {err}"
-                );
+            if let Err(e) = ChannelData::decode(buf) {
+                assert_eq!(want_err, e, "wrong error of {name}");
             } else {
-                panic!("expected error, but got ok");
+                panic!("expected `Err`, but got `Ok` in {name}");
             }
         }
     }
 
     #[test]
-    fn test_is_channel_data() {
-        let tests = vec![
+    fn is_channel_data_detects_correctly() {
+        let tests = [
             ("small", vec![1, 2, 3, 4], false),
             ("zeroes", vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], false),
         ];
-
         for (name, buf, r) in tests {
             let v = ChannelData::is_channel_data(&buf);
-            assert_eq!(v, r, "unexpected: ({name}) {r} != {v}");
+
+            assert_eq!(v, r, "wrong result in {name}");
         }
     }
 
@@ -275,11 +283,11 @@ mod chandata_test {
     ];
 
     #[test]
-    fn test_chrome_channel_data() {
+    fn chrome_channel_data() {
         let mut data = vec![];
         let mut messages = vec![];
 
-        // Decoding hex data into binary.
+        // Decoding HEX data into binary.
         for h in &CHANDATA_TEST_HEX {
             let b = match hex::decode(h) {
                 Ok(b) => b,
@@ -288,7 +296,7 @@ mod chandata_test {
             data.push(b);
         }
 
-        // All hex streams decoded to raw binary format and stored in data
+        // All HEX streams decoded to raw binary format and stored in the `data`
         // slice. Decoding packets to messages.
         for packet in data {
             let m = ChannelData::decode(packet.clone()).unwrap();
@@ -296,12 +304,12 @@ mod chandata_test {
             let encoded = ChannelData::encode(&m.data, m.number).unwrap();
             let decoded = ChannelData::decode(encoded.clone()).unwrap();
 
-            assert_eq!(m.data, decoded.data, "should be equal");
-            assert_eq!(m.number, decoded.number, "should be equal");
+            assert_eq!(m.data, decoded.data, "wrong payload");
+            assert_eq!(m.number, decoded.number, "wrong number");
 
             messages.push(m);
         }
 
-        assert_eq!(messages.len(), 2, "unexpected message slice list");
+        assert_eq!(messages.len(), 2, "wrong number of messages");
     }
 }

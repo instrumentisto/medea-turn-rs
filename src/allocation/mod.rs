@@ -103,7 +103,7 @@ impl Info {
 
 /// Representation of an [allocation].
 ///
-/// [allocation]:https://datatracker.ietf.org/doc/html/rfc5766#section-5
+/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
 #[derive(Debug)]
 pub(crate) struct Allocation {
     /// Relay [`SocketAddr`].

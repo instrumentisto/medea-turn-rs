@@ -847,7 +847,7 @@ mod request_test {
         time::{Duration, Instant},
     };
 
-    use crate::{allocation::ManagerConfig, relay::RelayAllocator};
+    use crate::{allocation::ManagerConfig, relay};
 
     use super::*;
 
@@ -917,7 +917,7 @@ mod request_test {
             Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let mut allocation_manager = Manager::new(ManagerConfig {
-            relay_addr_generator: RelayAllocator {
+            relay_addr_generator: relay::Allocator {
                 relay_address: IpAddr::from([127, 0, 0, 1]),
                 min_port: 49152,
                 max_port: 65535,

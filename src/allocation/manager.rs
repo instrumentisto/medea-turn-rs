@@ -9,15 +9,15 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use crate::{attr::Username, Error, RelayAllocator};
+use crate::{attr::Username, relay, Error};
 
 use super::{Allocation, DynTransport, FiveTuple, Info};
 
 /// Configuration parameters of a [`Manager`].
 #[derive(Debug)]
 pub(crate) struct Config {
-    /// [`RelayAllocator`] of connections.
-    pub(crate) relay_addr_generator: RelayAllocator,
+    /// [`relay::Allocator`] of connections.
+    pub(crate) relay_addr_generator: relay::Allocator,
 
     /// [`mpsc::Sender`] for notifying when an [`Allocation`] is closed.
     pub(crate) alloc_close_notify: Option<mpsc::Sender<Info>>,
@@ -29,8 +29,8 @@ pub(crate) struct Manager {
     /// Stored [`Allocation`]s.
     allocations: HashMap<FiveTuple, Allocation>,
 
-    /// [`RelayAllocator`] of connections.
-    relay_allocator: RelayAllocator,
+    /// [`relay::Allocator`] of connections.
+    relay_allocator: relay::Allocator,
 
     /// [`mpsc::Sender`] for notifying when an [`Allocation`] is closed.
     alloc_close_notify: Option<mpsc::Sender<Info>>,
@@ -165,8 +165,9 @@ mod spec {
     use crate::{
         attr::{Attribute, ChannelNumber, Data, Username},
         chandata::ChannelData,
+        relay,
         server::DEFAULT_LIFETIME,
-        Error, FiveTuple, RelayAllocator,
+        Error, FiveTuple,
     };
 
     use super::{Config, DynTransport, Manager};
@@ -174,7 +175,7 @@ mod spec {
     /// Creates a new [`Manager`] for testing purposes.
     fn create_manager() -> Manager {
         let config = Config {
-            relay_addr_generator: RelayAllocator {
+            relay_addr_generator: relay::Allocator {
                 relay_address: IpAddr::from([127, 0, 0, 1]),
                 min_port: 49152,
                 max_port: 65535,
