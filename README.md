@@ -9,9 +9,9 @@
 
 [Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/main/CHANGELOG.md)
 
-[STUN]/[TURN] implementation used by [Medea media server](https://github.com/instrumentisto/medea). Majorly refactored fork of the [`webrtc-rs/turn` crate](https://github.com/webrtc-rs/webrtc/tree/89285ceba23dc57fc99386cb978d2d23fe909437/turn).
+[STUN]/[TURN] server implementation used by [Medea media server](https://github.com/instrumentisto/medea).
 
-Hard fork of [`webrtc-rs/turn` crate](https://docs.rs/turn).
+Majorly refactored hard fork of the [`webrtc-rs/turn` crate](https://github.com/webrtc-rs/webrtc/tree/89285ceba23dc57fc99386cb978d2d23fe909437/turn).
 
 
 
