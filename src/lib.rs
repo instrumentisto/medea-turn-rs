@@ -1,8 +1,4 @@
-//! Pure Rust [STUN]/[TURN] server implementation, used by [Medea] media server.
-//!
-//! [Medea]: https://github.com/instrumentisto/medea
-//! [STUN]: https://en.wikipedia.org/wiki/STUN
-//! [TURN]: https://en.wikipedia.org/wiki/TURN
+#![doc = include_str!("../README.md")]
 
 #![deny(
     macro_use_extern_crate,
@@ -264,23 +260,23 @@ pub enum Error {
 
     /// [DONT-FRAGMENT][1] attribute is not supported.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.8
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-14.8
     #[display("no support for DONT-FRAGMENT")]
     NoDontFragmentSupport,
 
     /// Allocation request cannot have both [RESERVATION-TOKEN][1] and
     /// [EVEN-PORT][2].
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
-    /// [2]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.6
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-14.9
+    /// [2]: https://tools.ietf.org/html/rfc5766#section-14.6
     #[display("Request must not contain RESERVATION-TOKEN and EVEN-PORT")]
     RequestWithReservationTokenAndEvenPort,
 
     /// Allocation request cannot contain both [RESERVATION-TOKEN][1] and
     /// [REQUESTED-ADDRESS-FAMILY][2].
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
-    /// [2]: https://www.rfc-editor.org/rfc/rfc6156#section-4.1.1
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-14.9
+    /// [2]: https://tools.ietf.org/html/rfc6156#section-4.1.1
     #[display(
         "Request must not contain RESERVATION-TOKEN \
             and REQUESTED-ADDRESS-FAMILY"
@@ -298,7 +294,7 @@ pub enum Error {
     /// Failed to handle [Send Indication][1], since there is no permission for
     /// the provided address.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-10.2
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-10.2
     #[display("unable to handle send-indication, no permission added")]
     NoPermission,
 

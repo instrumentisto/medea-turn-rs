@@ -50,7 +50,7 @@ use crate::{
 /// > It is RECOMMENDED that the server use a maximum allowed lifetime value of
 /// > no more than 3600 seconds (1 hour).
 ///
-/// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
 /// [2]: https://tools.ietf.org/html/rfc5766#section-6.2
 const MAXIMUM_ALLOCATION_LIFETIME: Duration = Duration::from_secs(3600);
 
@@ -193,7 +193,7 @@ async fn handle_data_packet(
 ///
 /// See the [`Error`] for details.
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-6.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-6.2
 /// [STUN]: https://en.wikipedia.org/wiki/STUN
 #[allow(clippy::too_many_lines)] // TODO: refactor
 async fn handle_allocate_request(
@@ -544,7 +544,7 @@ async fn handle_binding_request(
 ///
 /// See the [`Error`] for details.
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-7.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-7.2
 async fn handle_refresh_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
@@ -612,7 +612,7 @@ async fn handle_refresh_request(
 ///
 /// See the [`Error`] for details.
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-9.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-9.2
 async fn handle_create_permission_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
@@ -687,7 +687,7 @@ async fn handle_create_permission_request(
 ///
 /// See the [`Error`] for details.
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-10.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-10.2
 async fn handle_send_indication(
     msg: Message<Attribute>,
     allocs: &mut Manager,
@@ -719,7 +719,7 @@ async fn handle_send_indication(
 ///
 /// See the [`Error`] for details.
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-11.2
 #[allow(clippy::too_many_arguments)] // TODO: refactor
 async fn handle_channel_bind_request(
     msg: Message<Attribute>,

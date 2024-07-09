@@ -10,7 +10,7 @@ use crate::{transport, Error};
 
 /// Generator of relay addresses when creating an [allocation].
 ///
-/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+/// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
 #[derive(Clone, Debug)]
 pub struct Allocator {
     /// [`IpAddr`] returned to the user when a relay is created.

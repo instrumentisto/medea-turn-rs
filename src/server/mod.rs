@@ -31,7 +31,7 @@ use crate::{
 /// Default lifetime of an [allocation][1] (10 minutes) as defined in
 /// [RFC 5766 Section 2.2][1].
 ///
-/// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
+/// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
 pub(crate) const DEFAULT_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
 /// [MTU] of UDP connections.
@@ -65,7 +65,7 @@ pub struct Config<A> {
     /// > The realm tells the client which username and password combination to
     /// > use to authenticate requests.
     ///
-    /// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-3
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-3
     pub realm: String,
 
     /// Callback for handling incoming authentication requests, allowing users
@@ -80,7 +80,7 @@ pub struct Config<A> {
     /// [`mpsc::Sender`] receiving notify on [allocation][1] close event, along
     /// with metrics data.
     ///
-    /// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
     pub alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
@@ -204,7 +204,7 @@ impl Server {
     ///
     /// With an [`Error::Closed`] if the [`Server`] was closed already.
     ///
-    /// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
     pub async fn delete_allocations_by_username(
         &self,
         username: String,

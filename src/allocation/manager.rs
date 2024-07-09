@@ -1,6 +1,6 @@
 //! Storage of [allocation]s.
 //!
-//! [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+//! [allocation]: https://tools.ietf.org/html/rfc5766#section-5
 
 use std::{
     collections::HashMap, net::SocketAddr, sync::atomic::Ordering,

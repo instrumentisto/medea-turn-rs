@@ -1,6 +1,6 @@
 //! [Allocation] definitions.
 //!
-//! [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+//! [Allocation]: https://tools.ietf.org/html/rfc5766#section-5
 
 mod channel_bind;
 mod manager;
@@ -70,22 +70,22 @@ pub struct FiveTuple {
 
 /// Information about an [allocation].
 ///
-/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+/// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
 #[derive(Clone, Debug)]
 pub struct Info {
     /// [`FiveTuple`] of the [allocation].
     ///
-    /// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+    /// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
     pub five_tuple: FiveTuple,
 
     /// [`Username`] of the [allocation].
     ///
-    /// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+    /// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
     pub username: Username,
 
     /// Relayed bytes through the [allocation].
     ///
-    /// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+    /// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
     pub relayed_bytes: usize,
 }
 
@@ -103,7 +103,7 @@ impl Info {
 
 /// Representation of an [allocation].
 ///
-/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+/// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
 #[derive(Debug)]
 pub(crate) struct Allocation {
     /// Relay [`SocketAddr`].
@@ -340,10 +340,10 @@ impl Allocation {
     /// > is then sent on the 5-tuple associated with the allocation.
     ///
     /// [`spawn`]: tokio::spawn()
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-10.3
-    /// [2]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.7
-    /// [Section 8]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
-    /// [Section 11]: https://datatracker.ietf.org/doc/html/rfc5766#section-11
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-10.3
+    /// [2]: https://tools.ietf.org/html/rfc5766#section-11.7
+    /// [Section 8]: https://tools.ietf.org/html/rfc5766#section-8
+    /// [Section 11]: https://tools.ietf.org/html/rfc5766#section-11
     #[allow(clippy::too_many_lines)]
     fn spawn_relay_handler(
         &self,

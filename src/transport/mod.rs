@@ -34,12 +34,12 @@ pub use self::tcp::Server as TcpServer;
 pub enum Request {
     /// [STUN Message].
     ///
-    /// [STUN Message]: https://datatracker.ietf.org/doc/html/rfc5389#section-6
+    /// [STUN Message]: https://tools.ietf.org/html/rfc5389#section-6
     Message(Message<Attribute>),
 
     /// [TURN ChannelData Message][1].
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     ChannelData(ChannelData),
 }
 
@@ -157,7 +157,7 @@ pub enum Error {
 
     /// [TURN ChannelData][1] format error.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     #[from(chandata::FormatError)]
     ChannelData(chandata::FormatError),
 

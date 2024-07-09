@@ -1,6 +1,6 @@
 //! [TURN ChannelData Message][1] implementation.
 //!
-//! [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+//! [1]: https://tools.ietf.org/html/rfc5766#section-11.4
 
 use derive_more::{Display, Error};
 
@@ -12,28 +12,28 @@ const PADDING: usize = 4;
 
 /// [Channel Number] field size.
 ///
-/// [Channel Number]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+/// [Channel Number]: https://tools.ietf.org/html/rfc5766#section-11.4
 const NUMBER_SIZE: usize = 2;
 
 /// [Length] field size.
 ///
-/// [Length]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+/// [Length]: https://tools.ietf.org/html/rfc5766#section-11.4
 const LENGTH_SIZE: usize = 2;
 
 /// [ChannelData Message][1] header size.
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+/// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
 const HEADER_SIZE: usize = LENGTH_SIZE + NUMBER_SIZE;
 
 /// Representation of [TURN ChannelData Message][1] defined in [RFC 5766].
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
-/// [RFC 5766]: https://www.rfc-editor.org/rfc/rfc5766
+/// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
+/// [RFC 5766]: https://tools.ietf.org/html/rfc5766
 #[derive(Debug)]
 pub struct ChannelData {
     /// Parsed [Channel Number][1].
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     number: u16,
 
     /// Parsed payload.
@@ -102,7 +102,7 @@ impl ChannelData {
 
     /// Returns [Channel Number][1] of this [`ChannelData`] message.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     pub(crate) const fn num(&self) -> u16 {
         self.number
     }
@@ -110,7 +110,7 @@ impl ChannelData {
     /// Encodes the provided `payload` and [Channel Number][1] as
     /// [`ChannelData`] message bytes.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     pub(crate) fn encode(
         payload: &[u8],
         chan_num: u16,
@@ -146,7 +146,7 @@ pub(crate) const fn nearest_padded_value_length(l: usize) -> usize {
 pub enum FormatError {
     /// [Channel Number][1] is incorrect.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     #[display("Channel Number not in [0x4000, 0x7FFF]")]
     InvalidChannelNumber,
 

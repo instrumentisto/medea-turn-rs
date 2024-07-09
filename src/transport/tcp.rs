@@ -229,7 +229,7 @@ enum RequestKind {
     /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     /// ```
     ///
-    /// [STUN Message]: https://datatracker.ietf.org/doc/html/rfc5389#section-6
+    /// [STUN Message]: https://tools.ietf.org/html/rfc5389#section-6
     Message(usize),
 
     /// [TURN ChannelData Message][1].
@@ -249,7 +249,7 @@ enum RequestKind {
     /// +-------------------------------+
     /// ```
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-11.4
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     ChannelData(usize),
 }
 
@@ -289,7 +289,7 @@ struct Codec {
 
     /// [STUN Message] decoder.
     ///
-    /// [STUN Message]: https://datatracker.ietf.org/doc/html/rfc5389#section-6
+    /// [STUN Message]: https://tools.ietf.org/html/rfc5389#section-6
     msg_decoder: MessageDecoder<Attribute>,
 }
 

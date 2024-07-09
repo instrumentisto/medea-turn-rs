@@ -1,7 +1,7 @@
 //! [Allocation] [permission] definitions.
 //!
-//! [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-2.2
-//! [permission]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+//! [Allocation]: https://tools.ietf.org/html/rfc5766#section-2.2
+//! [permission]: https://tools.ietf.org/html/rfc5766#section-8
 
 use std::{collections::HashMap, net::IpAddr, sync::Arc};
 
@@ -14,13 +14,13 @@ use tokio::{
 ///
 /// > The Permission Lifetime MUST be 300 seconds (= 5 minutes).
 ///
-/// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+/// [1]: https://tools.ietf.org/html/rfc5766#section-8
 pub(crate) const PERMISSION_LIFETIME: Duration = Duration::from_secs(5 * 60);
 
 /// Representation of an [allocation] [permission].
 ///
-/// [allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-2.2
-/// [permission]: https://datatracker.ietf.org/doc/html/rfc5766#section-8
+/// [allocation]: https://tools.ietf.org/html/rfc5766#section-2.2
+/// [permission]: https://tools.ietf.org/html/rfc5766#section-8
 #[derive(Debug)]
 pub(crate) struct Permission {
     /// [`IpAddr`] of this [`Permission`] that is matched with the source IP
