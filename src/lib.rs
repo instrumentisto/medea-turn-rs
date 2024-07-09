@@ -5,10 +5,9 @@
     rust_2018_idioms,
     rustdoc::all,
     trivial_casts,
-    trivial_numeric_casts,
-    unsafe_code
+    trivial_numeric_casts
 )]
-#![forbid(non_ascii_idents)]
+#![forbid(non_ascii_idents, unsafe_code)]
 #![warn(
     clippy::absolute_paths,
     clippy::as_conversions,
@@ -52,7 +51,6 @@
     clippy::let_underscore_untyped,
     clippy::lossy_float_literal,
     clippy::manual_c_str_literals,
-    clippy::manual_clamp,
     clippy::map_err_ignore,
     clippy::mem_forget,
     clippy::missing_assert_message,
@@ -79,7 +77,6 @@
     clippy::rc_buffer,
     clippy::rc_mutex,
     clippy::read_zero_byte_vec,
-    clippy::readonly_write_lock,
     clippy::redundant_clone,
     clippy::redundant_type_annotations,
     clippy::ref_patterns,
@@ -128,9 +125,11 @@
     missing_copy_implementations,
     missing_debug_implementations,
     missing_docs,
+    redundant_lifetimes,
     semicolon_in_expressions_from_macros,
     single_use_lifetimes,
     unit_bindings,
+    unnameable_types,
     unreachable_pub,
     unsafe_op_in_unsafe_fn,
     unstable_features,
@@ -143,11 +142,10 @@
     unused_results,
     variant_size_differences
 )]
-#![cfg_attr(test, allow(unused_crate_dependencies, unused_lifetimes))]
 
 mod allocation;
 mod attr;
-mod chandata;
+pub mod chandata;
 pub mod relay;
 mod server;
 pub mod transport;
@@ -161,6 +159,7 @@ pub(crate) use self::allocation::Allocation;
 pub(crate) use self::transport::Transport;
 pub use self::{
     allocation::{FiveTuple, Info as AllocationInfo},
+    chandata::ChannelData,
     server::{Config as ServerConfig, Server},
 };
 
