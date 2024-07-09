@@ -1,4 +1,8 @@
-//! A pure Rust implementation of TURN.
+//! Pure Rust [STUN]/[TURN] server implementation, used by [Medea] media server.
+//!
+//! [Medea]: https://github.com/instrumentisto/medea
+//! [STUN]: https://en.wikipedia.org/wiki/STUN
+//! [TURN]: https://en.wikipedia.org/wiki/TURN
 
 #![deny(
     macro_use_extern_crate,
@@ -162,13 +166,13 @@ pub(crate) use self::allocation::Allocation;
 pub(crate) use self::transport::Transport;
 pub use self::{
     allocation::{FiveTuple, Info as AllocationInfo},
-    server::{Config, Server},
+    server::{Config as ServerConfig, Server},
 };
 
-/// External authentication handler.
+/// Authentication handler.
 pub trait AuthHandler {
-    /// Perform authentication of the given user data returning ICE password
-    /// on success.
+    /// Performs authentication of the specified user, returning its ICE
+    /// password on success.
     ///
     /// # Errors
     ///
@@ -192,17 +196,20 @@ impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
     }
 }
 
-/// TURN server errors.
+/// Possible errors of a [STUN]/[TURN] [`Server`].
+///
+/// [STUN]: https://en.wikipedia.org/wiki/STUN
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
 #[derive(Debug, Display, Eq, From, PartialEq, StdError)]
 #[non_exhaustive]
 #[allow(variant_size_differences)]
 pub enum Error {
-    /// Failed to allocate new relay connection sine maximum retires count
+    /// Failed to allocate new relay connection, since maximum retires count
     /// exceeded.
     #[display("turn: max retries exceeded")]
     MaxRetriesExceeded,
 
-    /// A peer address is part of a different address family than that of the
+    /// {eer address is part of a different address family than that of the
     /// relayed transport address of the allocation.
     #[display("error code 443: peer address family mismatch")]
     PeerAddressFamilyMismatch,
@@ -211,14 +218,14 @@ pub enum Error {
     #[display("use of closed network connection")]
     Closed,
 
-    /// Channel binding request failed since channel number is currently bound
+    /// Channel binding request failed, since channel number is currently bound
     /// to a different transport address.
-    #[display("you cannot use the same channel number with different peer")]
+    #[display("cannot use the same channel number with different peer")]
     SameChannelDifferentPeer,
 
-    /// Channel binding request failed since the transport address is currently
+    /// Channel binding request failed, since the transport address is currently
     /// bound to a different channel number.
-    #[display("you cannot use the same peer number with different channel")]
+    #[display("cannot use the same peer number with different channel")]
     SamePeerDifferentChannel,
 
     /// Cannot create allocation with zero lifetime.
@@ -226,7 +233,7 @@ pub enum Error {
     LifetimeZero,
 
     /// Cannot create allocation for the same five-tuple.
-    #[display("allocation attempt created with duplicate FiveTuple")]
+    #[display("allocation attempt created with duplicate 5-TUPLE")]
     DupeFiveTuple,
 
     /// Authentication error.
@@ -237,16 +244,21 @@ pub enum Error {
     #[display("unexpected class")]
     UnexpectedClass,
 
-    /// Allocate request failed since allocation already exists for the given
-    /// five-tuple.
+    /// Allocation request failed, since allocation already exists for the
+    /// provided [`FiveTuple`].
     #[display("relay already allocated for 5-TUPLE")]
     RelayAlreadyAllocatedForFiveTuple,
 
-    /// STUN message does not have a required attribute.
+    /// [STUN] message doesn't have a required attribute.
+    ///
+    /// [STUN]: https://en.wikipedia.org/wiki/STUN
     #[display("requested attribute not found")]
     AttributeNotFound,
 
-    /// STUN message contains wrong message integrity.
+    /// [STUN] message contains wrong [`MessageIntegrity`].
+    ///
+    /// [`MessageIntegrity`]: attr::MessageIntegrity
+    /// [STUN]: https://en.wikipedia.org/wiki/STUN
     #[display("message integrity mismatch")]
     IntegrityMismatch,
 
@@ -256,11 +268,11 @@ pub enum Error {
     #[display("no support for DONT-FRAGMENT")]
     NoDontFragmentSupport,
 
-    /// Allocate request cannot have both [RESERVATION-TOKEN][1] and
-    /// [EVEN-PORT].
+    /// Allocation request cannot have both [RESERVATION-TOKEN][1] and
+    /// [EVEN-PORT][2].
     ///
     /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
-    /// [EVEN-PORT]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.6
+    /// [2]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.6
     #[display("Request must not contain RESERVATION-TOKEN and EVEN-PORT")]
     RequestWithReservationTokenAndEvenPort,
 
@@ -275,7 +287,7 @@ pub enum Error {
     )]
     RequestWithReservationTokenAndReqAddressFamily,
 
-    /// No allocation for the given five-tuple.
+    /// No allocation for the provided [`FiveTuple`].
     #[display("no allocation found")]
     NoAllocationFound,
 
@@ -283,13 +295,15 @@ pub enum Error {
     #[display("allocation requested unsupported proto")]
     UnsupportedRelayProto,
 
-    /// Failed to handle send indication since there is no permission for the
-    /// given address.
+    /// Failed to handle [Send Indication][1], since there is no permission for
+    /// the provided address.
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-10.2
     #[display("unable to handle send-indication, no permission added")]
     NoPermission,
 
-    /// Failed to handle channel data since ther is no binding for the given
-    /// channel.
+    /// Failed to handle channel data, since there is no binding for the
+    /// provided channel.
     #[display("no such channel bind")]
     NoSuchChannelBind,
 
@@ -298,7 +312,7 @@ pub enum Error {
     #[from(ignore)]
     Encode(#[error(not(source))] bytecodec::ErrorKind),
 
-    /// Failed to encode message.
+    /// Failed to send message.
     #[display("Transport error: {_0}")]
     Transport(transport::Error),
 }

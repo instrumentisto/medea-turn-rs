@@ -1,4 +1,7 @@
-//! TURN server implementation.
+//! [STUN]/[TURN] server implementation.
+//!
+//! [STUN]: https://en.wikipedia.org/wiki/STUN
+//! [TURN]: https://en.wikipedia.org/wiki/TURN
 
 mod request;
 
@@ -16,6 +19,8 @@ use tokio::{
     time::Duration,
 };
 
+#[cfg(doc)]
+use crate::allocation::Allocation;
 use crate::{
     allocation::{FiveTuple, Info, Manager, ManagerConfig},
     relay,
@@ -23,50 +28,77 @@ use crate::{
     AuthHandler, Error,
 };
 
-/// `DEFAULT_LIFETIME` in RFC 5766 is 10 minutes.
+/// Default lifetime of an [allocation][1] (10 minutes) as defined in
+/// [RFC 5766 Section 2.2][1].
 ///
-/// [RFC 5766 Section 2.2](https://www.rfc-editor.org/rfc/rfc5766#section-2.2)
+/// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
 pub(crate) const DEFAULT_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
-/// MTU used for UDP connections.
+/// [MTU] of UDP connections.
+///
+/// [MTU]: https://en.wikipedia.org/wiki/Maximum_transmission_unit
 pub(crate) const INBOUND_MTU: usize = 1500;
 
-/// [`Config`] configures the TURN Server.
+/// Configuration of a [`Server`].
 #[derive(Debug)]
 pub struct Config<A> {
-    /// `conn_configs` are a list of all the turn listeners.
-    /// Each listener can have custom behavior around the creation of Relays.
+    /// List of all [STUN]/[TURN] connections listeners.
+    ///
+    /// Each listener may have a custom behavior around the creation of
+    /// [`relay`]s.
+    ///
+    /// [STUN]: https://en.wikipedia.org/wiki/STUN
+    /// [TURN]: https://en.wikipedia.org/wiki/TURN
     #[debug("{:?}", connections.iter()
         .map(|c| (c.local_addr(), c.proto()))
         .collect::<Vec<_>>())]
     pub connections: Vec<Arc<dyn Transport + Send + Sync>>,
 
-    /// Relay connections allocator.
+    /// [`Allocator`] of [`relay`] connections.
+    ///
+    /// [`Allocator`]: relay::Allocator
     pub relay_addr_generator: relay::Allocator,
 
-    /// `realm` sets the realm for this server
+    /// [Realm][1] of the [`Server`].
+    ///
+    /// > A string used to describe the server or a context within the server.
+    /// > The realm tells the client which username and password combination to
+    /// > use to authenticate requests.
+    ///
+    /// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-3
     pub realm: String,
 
-    /// `auth_handler` is a callback used to handle incoming auth requests,
-    /// allowing users to customize Pion TURN with custom behavior.
+    /// Callback for handling incoming authentication requests, allowing users
+    /// to customize it with custom behavior.
     pub auth_handler: Arc<A>,
 
-    /// Sets the lifetime of channel binding.
+    /// Lifetime of a [channel bindings][1].
+    ///
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-2.5
     pub channel_bind_lifetime: Duration,
 
-    /// To receive notify on allocation close event, with metrics data.
+    /// [`mpsc::Sender`] receiving notify on [allocation][1] close event, along
+    /// with metrics data.
+    ///
+    /// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
     pub alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
-/// Server is an instance of the TURN Server
+/// Instance of a [STUN]/[TURN] server.
+///
+/// [STUN]: https://en.wikipedia.org/wiki/STUN
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
 #[derive(Debug)]
 pub struct Server {
-    /// Channel to [`Server`]'s internal loop.
+    /// [`broadcast::Sender`] to this [`Server`]'s internal loop.
     command_tx: broadcast::Sender<Command>,
 }
 
 impl Server {
-    /// creates a new TURN server
+    /// Creates a new [`Server`] according to the provided [`Config`], and
+    /// [`spawn`]s its internal loop.
+    ///
+    /// [`spawn`]: tokio::spawn()
     #[must_use]
     pub fn new<A>(config: Config<A>) -> Self
     where
@@ -124,8 +156,7 @@ impl Server {
                                 }
                                 Err(RecvError::Lagged(n)) => {
                                     log::warn!(
-                                        "Turn server has lagged by {n} \
-                                        messages",
+                                        "`Server` has lagged by {n} messages",
                                     );
                                 }
                             }
@@ -134,10 +165,8 @@ impl Server {
                         v = conn.recv_from() => {
                             match v {
                                 Ok(v) => v,
-                                Err(err) => {
-                                    log::debug!(
-                                        "exit read loop on error: {err}"
-                                    );
+                                Err(e) => {
+                                    log::debug!("Exit read loop on error: {e}");
                                     break;
                                 }
                             }
@@ -145,7 +174,7 @@ impl Server {
                         () = close_tx.closed() => break
                     };
 
-                    let handle = request::handle_message(
+                    let handle = request::handle(
                         msg,
                         &conn,
                         FiveTuple {
@@ -159,9 +188,8 @@ impl Server {
                         &mut nonces,
                         &auth_handler,
                     );
-
-                    if let Err(err) = handle.await {
-                        log::warn!("Error when handling STUN request: {err}");
+                    if let Err(e) = handle.await {
+                        log::warn!("Error when handling `Request`: {e}");
                     }
                 }
             }));
@@ -170,17 +198,19 @@ impl Server {
         this
     }
 
-    /// Deletes all existing allocations by the provided `username`.
+    /// Deletes all existing [allocations][1] with the provided `username`.
     ///
     /// # Errors
     ///
-    /// With [`Error::Closed`] if the [`Server`] was closed already.
+    /// With an [`Error::Closed`] if the [`Server`] was closed already.
+    ///
+    /// [1]: https://www.rfc-editor.org/rfc/rfc5766#section-2.2
     pub async fn delete_allocations_by_username(
         &self,
         username: String,
     ) -> Result<(), Error> {
         let (closed_tx, closed_rx) = mpsc::channel(1);
-        #[allow(clippy::map_err_ignore)]
+        #[allow(clippy::map_err_ignore)] // intentional
         let _: usize = self
             .command_tx
             .send(Command::DeleteAllocations(username, Arc::new(closed_rx)))
@@ -191,7 +221,7 @@ impl Server {
         Ok(())
     }
 
-    /// Returns [`Info`]s by specified [`FiveTuple`]s.
+    /// Returns [`Info`]s for the provided [`FiveTuple`]s.
     ///
     /// If `five_tuples` is:
     /// - [`None`]:               It returns information about the all
@@ -202,7 +232,7 @@ impl Server {
     ///
     /// # Errors
     ///
-    /// With [`Error::Closed`] if the [`Server`] was closed already.
+    /// With an [`Error::Closed`] if the [`Server`] was closed already.
     pub async fn get_allocations_info(
         &self,
         five_tuples: Option<Vec<FiveTuple>>,
@@ -215,35 +245,28 @@ impl Server {
 
         let (infos_tx, mut infos_rx) = mpsc::channel(1);
 
-        #[allow(clippy::map_err_ignore)]
+        #[allow(clippy::map_err_ignore)] // intentional
         let _: usize = self
             .command_tx
             .send(Command::GetAllocationsInfo(five_tuples, infos_tx))
             .map_err(|_| Error::Closed)?;
 
         let mut info: HashMap<FiveTuple, Info> = HashMap::new();
-
         for _ in 0..self.command_tx.receiver_count() {
             info.extend(infos_rx.recv().await.ok_or(Error::Closed)?);
         }
-
         Ok(info)
     }
 }
 
-/// The protocol to communicate between the [`Server`]'s public methods
-/// and the tasks spawned in inner loop.
+/// Commands for communication between [`Server`]'s public methods and the tasks
+/// spawned in its inner loop.
 #[derive(Clone)]
 enum Command {
-    /// Command to delete [`Allocation`][`Allocation`] by provided `username`.
-    ///
-    /// [`Allocation`]: `crate::allocation::Allocation`
+    /// Delete [`Allocation`] by the provided `username`.
     DeleteAllocations(String, Arc<mpsc::Receiver<()>>),
 
-    /// Command to get information of [`Allocation`][`Allocation`]s by provided
-    /// [`FiveTuple`]s.
-    ///
-    /// [`Allocation`]: `crate::allocation::Allocation`
+    /// Return information about [`Allocation`] for the provided [`FiveTuple`]s.
     GetAllocationsInfo(
         Option<Vec<FiveTuple>>,
         mpsc::Sender<HashMap<FiveTuple, Info>>,

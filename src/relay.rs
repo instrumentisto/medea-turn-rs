@@ -34,9 +34,9 @@ impl Allocator {
     ///
     /// # Errors
     ///
-    /// - With [`Error::MaxRetriesExceeded`] if the requested port is `0` and
+    /// - With an [`Error::MaxRetriesExceeded`] if the requested port is `0` and
     /// failed to find a free port in the specified [`max_retries`].
-    /// - With [`Error::Transport`] if failed to bind to the specified port.
+    /// - With an [`Error::Transport`] if failed to bind to the specified port.
     ///
     /// [`max_retries`]: Allocator::max_retries
     pub async fn allocate_conn(

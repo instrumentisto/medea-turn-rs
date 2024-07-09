@@ -174,6 +174,11 @@ impl Allocation {
     }
 
     /// Send the provided `data` via the associated relay socket.
+    ///
+    /// # Errors
+    ///
+    /// - With an [`Error::NoAllocationFound`] if this [`Allocation`] is dead.
+    /// - With a [`transport::Error`] if failed to send the `data`.
     pub(crate) async fn relay(
         &self,
         data: &[u8],

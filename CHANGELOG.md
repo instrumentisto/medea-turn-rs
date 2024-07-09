@@ -11,7 +11,7 @@ All user visible changes to this project will be documented in this file. This p
 
 ### Initially re-implemented
 
-- Performed major refactoring with non-server code removing. ([#1])
+- Performed major refactoring with non-server code removing. ([#1], [#2])
 - Added TCP transport. ([#1])
 
 ### [Upstream changes](https://github.com/webrtc-rs/webrtc/blob/89285ceba23dc57fc99386cb978d2d23fe909437/turn/CHANGELOG.md#unreleased)
@@ -21,6 +21,7 @@ All user visible changes to this project will be documented in this file. This p
 
 [@clia]: https://github.com/clia
 [#1]: /../../pull/1
+[#2]: /../../pull/2
 [webrtc-rs/webrtc#330]: https://github.com/webrtc-rs/webrtc/pull/330
 [webrtc-rs/webrtc#421]: https://github.com/webrtc-rs/webrtc/pull/421
 
