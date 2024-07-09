@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-
 #![deny(
     macro_use_extern_crate,
     nonstandard_style,
