@@ -7,7 +7,7 @@
 [![CI](https://github.com/instrumentisto/medea-turn-rs/workflows/CI/badge.svg?branch=main "CI")](https://github.com/instrumentisto/medea-turn-rs/actions?query=workflow%3ACI+branch%3Amain)
 [![Rust docs](https://docs.rs/medea-turn/badge.svg "Rust docs")](https://docs.rs/medea-turn)
 
-[Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/master/CHANGELOG.md)
+[Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/main/CHANGELOG.md)
 
 [STUN]/[TURN] implementation used by [Medea media server](https://github.com/instrumentisto/medea). Majorly refactored fork of the [`webrtc-rs/turn` crate](https://github.com/webrtc-rs/webrtc/tree/89285ceba23dc57fc99386cb978d2d23fe909437/turn).
 
