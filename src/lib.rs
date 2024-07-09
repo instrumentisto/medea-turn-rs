@@ -1,5 +1,4 @@
-//! A pure Rust implementation of TURN.
-
+#![doc = include_str!("../README.md")]
 #![deny(
     macro_use_extern_crate,
     nonstandard_style,
@@ -149,25 +148,26 @@
 mod allocation;
 mod attr;
 mod chandata;
-mod con;
-mod relay;
+pub mod relay;
 mod server;
+pub mod transport;
 
-use std::{io, net::SocketAddr};
+use std::{net::SocketAddr, sync::Arc};
 
-use thiserror::Error;
+use derive_more::{Display, Error as StdError, From};
 
+#[cfg(test)]
+pub(crate) use self::allocation::Allocation;
+pub(crate) use self::transport::Transport;
 pub use self::{
-    allocation::{AllocInfo, FiveTuple},
-    con::TcpServer,
-    relay::RelayAllocator,
-    server::{Config, ConnConfig, Server},
+    allocation::{FiveTuple, Info as AllocationInfo},
+    server::{Config as ServerConfig, Server},
 };
 
-/// External authentication handler.
+/// Authentication handler.
 pub trait AuthHandler {
-    /// Perform authentication of the given user data returning ICE password
-    /// on success.
+    /// Performs authentication of the specified user, returning its ICE
+    /// password on success.
     ///
     /// # Errors
     ///
@@ -180,154 +180,134 @@ pub trait AuthHandler {
     ) -> Result<Box<str>, Error>;
 }
 
-/// TURN server errors.
-#[derive(Debug, Error, PartialEq)]
+impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
+    fn auth_handle(
+        &self,
+        username: &str,
+        realm: &str,
+        src_addr: SocketAddr,
+    ) -> Result<Box<str>, Error> {
+        (**self).auth_handle(username, realm, src_addr)
+    }
+}
+
+/// Possible errors of a [STUN]/[TURN] [`Server`].
+///
+/// [STUN]: https://en.wikipedia.org/wiki/STUN
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+#[derive(Debug, Display, Eq, From, PartialEq, StdError)]
 #[non_exhaustive]
 #[allow(variant_size_differences)]
 pub enum Error {
-    /// Failed to allocate new relay connection sine maximum retires count
+    /// Failed to allocate new relay connection, since maximum retires count
     /// exceeded.
-    #[error("turn: max retries exceeded")]
+    #[display("turn: max retries exceeded")]
     MaxRetriesExceeded,
 
-    /// Failed to handle channel data since channel number is incorrect.
-    #[error("channel number not in [0x4000, 0x7FFF]")]
-    InvalidChannelNumber,
-
-    /// Failed to handle channel data cause of incorrect message length.
-    #[error("channelData length != len(Data)")]
-    BadChannelDataLength,
-
-    /// Failed to handle message since it's shorter than expected.
-    #[error("unexpected EOF")]
-    UnexpectedEof,
-
-    /// A peer address is part of a different address family than that of the
+    /// {eer address is part of a different address family than that of the
     /// relayed transport address of the allocation.
-    #[error("error code 443: peer address family mismatch")]
+    #[display("error code 443: peer address family mismatch")]
     PeerAddressFamilyMismatch,
 
     /// Error when trying to perform action after closing server.
-    #[error("use of closed network connection")]
+    #[display("use of closed network connection")]
     Closed,
 
-    /// Channel binding request failed since channel number is currently bound
+    /// Channel binding request failed, since channel number is currently bound
     /// to a different transport address.
-    #[error("you cannot use the same channel number with different peer")]
+    #[display("cannot use the same channel number with different peer")]
     SameChannelDifferentPeer,
 
-    /// Channel binding request failed since the transport address is currently
+    /// Channel binding request failed, since the transport address is currently
     /// bound to a different channel number.
-    #[error("you cannot use the same peer number with different channel")]
+    #[display("cannot use the same peer number with different channel")]
     SamePeerDifferentChannel,
 
     /// Cannot create allocation with zero lifetime.
-    #[error("allocations must not be created with a lifetime of 0")]
+    #[display("allocations must not be created with a lifetime of 0")]
     LifetimeZero,
 
     /// Cannot create allocation for the same five-tuple.
-    #[error("allocation attempt created with duplicate FiveTuple")]
+    #[display("allocation attempt created with duplicate 5-TUPLE")]
     DupeFiveTuple,
 
-    /// The given nonce is wrong or already been used.
-    #[error("duplicated Nonce generated, discarding request")]
-    RequestReplay,
-
     /// Authentication error.
-    #[error("no such user exists")]
+    #[display("no such user exists")]
     NoSuchUser,
 
     /// Unsupported request class.
-    #[error("unexpected class")]
+    #[display("unexpected class")]
     UnexpectedClass,
 
-    /// Allocate request failed since allocation already exists for the given
-    /// five-tuple.
-    #[error("relay already allocated for 5-TUPLE")]
+    /// Allocation request failed, since allocation already exists for the
+    /// provided [`FiveTuple`].
+    #[display("relay already allocated for 5-TUPLE")]
     RelayAlreadyAllocatedForFiveTuple,
 
-    /// STUN message does not have a required attribute.
-    #[error("requested attribute not found")]
+    /// [STUN] message doesn't have a required attribute.
+    ///
+    /// [STUN]: https://en.wikipedia.org/wiki/STUN
+    #[display("requested attribute not found")]
     AttributeNotFound,
 
-    /// STUN message contains wrong message integrity.
-    #[error("message integrity mismatch")]
+    /// [STUN] message contains wrong [`MessageIntegrity`].
+    ///
+    /// [`MessageIntegrity`]: attr::MessageIntegrity
+    /// [STUN]: https://en.wikipedia.org/wiki/STUN
+    #[display("message integrity mismatch")]
     IntegrityMismatch,
 
     /// [DONT-FRAGMENT][1] attribute is not supported.
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.8
-    #[error("no support for DONT-FRAGMENT")]
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-14.8
+    #[display("no support for DONT-FRAGMENT")]
     NoDontFragmentSupport,
 
-    /// Allocate request cannot have both [RESERVATION-TOKEN][1] and
-    /// [EVEN-PORT].
+    /// Allocation request cannot have both [RESERVATION-TOKEN][1] and
+    /// [EVEN-PORT][2].
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
-    /// [EVEN-PORT]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.6
-    #[error("Request must not contain RESERVATION-TOKEN and EVEN-PORT")]
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-14.9
+    /// [2]: https://tools.ietf.org/html/rfc5766#section-14.6
+    #[display("Request must not contain RESERVATION-TOKEN and EVEN-PORT")]
     RequestWithReservationTokenAndEvenPort,
 
     /// Allocation request cannot contain both [RESERVATION-TOKEN][1] and
     /// [REQUESTED-ADDRESS-FAMILY][2].
     ///
-    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.9
-    /// [2]: https://www.rfc-editor.org/rfc/rfc6156#section-4.1.1
-    #[error(
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-14.9
+    /// [2]: https://tools.ietf.org/html/rfc6156#section-4.1.1
+    #[display(
         "Request must not contain RESERVATION-TOKEN \
             and REQUESTED-ADDRESS-FAMILY"
     )]
     RequestWithReservationTokenAndReqAddressFamily,
 
-    /// No allocation for the given five-tuple.
-    #[error("no allocation found")]
+    /// No allocation for the provided [`FiveTuple`].
+    #[display("no allocation found")]
     NoAllocationFound,
 
     /// The specified protocol is not supported.
-    #[error("allocation requested unsupported proto")]
+    #[display("allocation requested unsupported proto")]
     UnsupportedRelayProto,
 
-    /// Failed to handle send indication since there is no permission for the
-    /// given address.
-    #[error("unable to handle send-indication, no permission added")]
+    /// Failed to handle [Send Indication][1], since there is no permission for
+    /// the provided address.
+    ///
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-10.2
+    #[display("unable to handle send-indication, no permission added")]
     NoPermission,
 
-    /// Failed to handle channel data since ther is no binding for the given
-    /// channel.
-    #[error("no such channel bind")]
+    /// Failed to handle channel data, since there is no binding for the
+    /// provided channel.
+    #[display("no such channel bind")]
     NoSuchChannelBind,
 
-    /// Failed to decode message.
-    #[error("Failed to decode STUN/TURN message: {0:?}")]
-    Decode(bytecodec::ErrorKind),
-
     /// Failed to encode message.
-    #[error("Failed to encode STUN/TURN message: {0:?}")]
-    Encode(bytecodec::ErrorKind),
+    #[display("Failed to encode STUN/TURN message: {_0:?}")]
+    #[from(ignore)]
+    Encode(#[error(not(source))] bytecodec::ErrorKind),
 
-    /// Tried to use dead transport.
-    #[error("Underlying TCP/UDP transport is dead")]
-    TransportIsDead,
-
-    /// Error for transport.
-    #[error("{0}")]
-    Io(#[source] IoError),
-}
-
-/// [`io::Error`] wrapper.
-#[derive(Debug, Error)]
-#[error("io error: {0}")]
-pub struct IoError(#[from] pub io::Error);
-
-// Workaround for wanting PartialEq for io::Error.
-impl PartialEq for IoError {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.kind() == other.0.kind()
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Self::Io(IoError(e))
-    }
+    /// Failed to send message.
+    #[display("Transport error: {_0}")]
+    Transport(transport::Error),
 }
