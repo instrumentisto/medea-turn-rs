@@ -24,7 +24,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     needs:
       - clippy
-      #- msrv
+      - msrv
       - rustdoc
       - rustfmt
       - test
@@ -70,7 +70,6 @@ jobs:
 
   msrv:
     name: MSRV
-    if: ${{ false }}  # TODO: re-enable once fully refactored
     strategy:
       fail-fast: false
       matrix:

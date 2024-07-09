@@ -164,6 +164,14 @@ pub use self::{
     server::{Config as ServerConfig, Server},
 };
 
+// TODO: Try remove once `bytecodec` is updated to new major version.
+/// Not really used, for surviving `minimal-versions` check only.
+mod minimal_versions {
+    use byteorder1 as _;
+    use trackable02 as _;
+    use trackable1 as _;
+}
+
 /// Authentication handler.
 pub trait AuthHandler {
     /// Performs authentication of the specified user, returning its ICE
