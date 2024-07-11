@@ -6,6 +6,20 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## [0.9.1] · 2024-07-11
+[0.9.1]: /../../tree/v0.9.1
+
+[Diff](/../../compare/v0.9.0...v0.9.1)
+
+### Added
+
+- `attr` module with [STUN]/[TURN] attributes re-exported. ([c0d471ef])
+
+[c0d471ef]: /../../commit/c0d471efd19b6dc35163956001d31dc09150fe8d
+
+
+
+
 ## [0.9.0] · 2024-07-09
 [0.9.0]: /../../tree/v0.9.0
 
@@ -38,3 +52,5 @@ See [old upstream CHANGELOG](https://github.com/webrtc-rs/webrtc/blob/turn-v0.6.
 
 
 [Semantic Versioning 2.0.0]: https://semver.org
+[STUN]: https://en.wikipedia.org/wiki/STUN
+[TURN]: https://en.wikipedia.org/wiki/TURN
