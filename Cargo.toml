@@ -1,6 +1,6 @@
 [package]
 name = "medea-turn"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2021"
 rust-version = "1.74"
 description = "STUN/TURN server implementation used by Medea media server."

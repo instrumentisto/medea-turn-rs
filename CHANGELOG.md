@@ -6,14 +6,16 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
-## [0.9.2] · 2024-07-?? (unreleased)
+## [0.9.2] · 2024-07-11
 [0.9.2]: /../../tree/v0.9.2
 
 [Diff](/../../compare/v0.9.1...v0.9.2)
 
 ### Fixed
 
-- Unexported [STUN]/[TURN] attributes in `attr` module.
+- Unexported [STUN]/[TURN] attributes in `attr` module. ([6bb1822c])
+
+[6bb1822c]: /../../commit/6bb1822c6de4f76ef2f7a7db89d3435e5151157e
 
 
 
