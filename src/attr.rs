@@ -6,7 +6,7 @@
 
 use stun_codec::define_attribute_enums;
 
-pub(crate) use stun_codec::{
+pub use stun_codec::{
     rfc5389::attributes::{
         AlternateServer, ErrorCode, Fingerprint, MappedAddress,
         MessageIntegrity, Nonce, Realm, Software, UnknownAttributes, Username,
