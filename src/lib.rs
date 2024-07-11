@@ -144,7 +144,7 @@
 )]
 
 mod allocation;
-mod attr;
+pub mod attr;
 pub mod chandata;
 pub mod relay;
 mod server;
