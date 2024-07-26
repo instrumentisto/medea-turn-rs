@@ -299,22 +299,22 @@ impl Decoder for Codec {
 
     fn decode(
         &mut self,
-        buf: &mut BytesMut,
+        src: &mut BytesMut,
     ) -> Result<Option<Self::Item>, Self::Error> {
         // PANIC: Indexing is OK below, since we guard it with `if` condition.
         #![allow(clippy::missing_asserts_for_indexing)] // false positive
 
-        if self.current.is_none() && buf.len() >= 4 {
+        if self.current.is_none() && src.len() >= 4 {
             self.current = Some(RequestKind::detect_kind([
-                buf[0], buf[1], buf[2], buf[3],
+                src[0], src[1], src[2], src[3],
             ]));
         }
 
         if let Some(current) = self.current {
-            if buf.len() >= current.length() {
+            if src.len() >= current.length() {
                 _ = self.current.take();
 
-                let raw = buf.split_to(current.length());
+                let raw = src.split_to(current.length());
                 let msg = match current {
                     RequestKind::Message(_) => {
                         let msg = self

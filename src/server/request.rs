@@ -172,7 +172,7 @@ pub(crate) async fn handle(
 async fn handle_data_packet(
     data: ChannelData,
     five_tuple: FiveTuple,
-    allocs: &mut Manager,
+    allocs: &Manager,
 ) -> Result<(), Error> {
     if let Some(alloc) = allocs.get_alloc(&five_tuple) {
         let channel = alloc.get_channel_addr(&data.num()).await;
@@ -616,7 +616,7 @@ async fn handle_refresh_request(
 async fn handle_create_permission_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
-    allocs: &mut Manager,
+    allocs: &Manager,
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
@@ -690,7 +690,7 @@ async fn handle_create_permission_request(
 /// [1]: https://tools.ietf.org/html/rfc5766#section-10.2
 async fn handle_send_indication(
     msg: Message<Attribute>,
-    allocs: &mut Manager,
+    allocs: &Manager,
     five_tuple: FiveTuple,
 ) -> Result<(), Error> {
     log::trace!("Received `SendIndication` from {}", five_tuple.src_addr);
@@ -724,7 +724,7 @@ async fn handle_send_indication(
 async fn handle_channel_bind_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
-    allocs: &mut Manager,
+    allocs: &Manager,
     five_tuple: FiveTuple,
     channel_bind_lifetime: Duration,
     uname: Username,

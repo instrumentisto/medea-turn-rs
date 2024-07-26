@@ -114,7 +114,7 @@ impl Manager {
 
     /// Returns the [`Allocation`] matching the provided [`FiveTuple`], if any.
     pub(crate) fn get_alloc(
-        &mut self,
+        &self,
         five_tuple: &FiveTuple,
     ) -> Option<&Allocation> {
         self.allocations.get(five_tuple).and_then(|a| a.is_alive().then_some(a))
