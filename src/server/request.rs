@@ -64,7 +64,8 @@ const NONCE_LIFETIME: Duration = Duration::from_secs(3600);
 /// See the [`Error`] for details.
 ///
 /// [1]: https://tools.ietf.org/html/rfc5389#section-7.3
-#[allow(clippy::too_many_arguments)] // TODO: refactor
+// TODO: Refactor to satisfy `clippy::too_many_arguments` lint.
+#[expect(clippy::too_many_arguments, reason = "needs refactoring")]
 pub(crate) async fn handle(
     msg: Request,
     conn: &Arc<dyn Transport + Send + Sync>,
@@ -195,7 +196,8 @@ async fn handle_data_packet(
 ///
 /// [1]: https://tools.ietf.org/html/rfc5766#section-6.2
 /// [STUN]: https://en.wikipedia.org/wiki/STUN
-#[allow(clippy::too_many_lines)] // TODO: refactor
+// TODO: Refactor to satisfy `clippy::too_many_lines` lint.
+#[expect(clippy::too_many_lines, reason = "needs refactoring")]
 async fn handle_allocate_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
@@ -720,7 +722,8 @@ async fn handle_send_indication(
 /// See the [`Error`] for details.
 ///
 /// [1]: https://tools.ietf.org/html/rfc5766#section-11.2
-#[allow(clippy::too_many_arguments)] // TODO: refactor
+// TODO: Refactor to satisfy `clippy::too_many_arguments` lint.
+#[expect(clippy::too_many_arguments, reason = "needs refactoring")]
 async fn handle_channel_bind_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,

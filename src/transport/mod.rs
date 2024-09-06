@@ -108,9 +108,10 @@ impl Transport for UdpSocket {
     }
 
     fn local_addr(&self) -> SocketAddr {
-        // PANIC: Unwrapping is OK here, as this function is intended to be
-        //        called on the bound `UdpSocket` only.
-        #[allow(clippy::unwrap_used)] // intentional
+        #[expect( // intentional
+            clippy::unwrap_used,
+            reason = "called on the bound `UdpSocket` only"
+        )]
         self.local_addr().unwrap()
     }
 
@@ -145,7 +146,10 @@ pub(crate) async fn lookup_host(
 
 /// Possible errors of a [`Transport`].
 #[derive(Debug, Display, From, Eq, PartialEq, StdError)]
-#[allow(variant_size_differences)]
+#[expect( // false positive
+    variant_size_differences,
+    reason = "`io::Error` is pointer-sized"
+)]
 pub enum Error {
     /// Tried to use a dead [`Transport`].
     #[display("Underlying TCP/UDP transport is dead")]

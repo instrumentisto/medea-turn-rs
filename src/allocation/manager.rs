@@ -54,7 +54,10 @@ impl Manager {
     ) -> HashMap<FiveTuple, Info> {
         let mut infos = HashMap::new();
 
-        #[allow(clippy::iter_over_hash_type)] // order doesn't matter here
+        #[expect( // order doesn't matter here
+            clippy::iter_over_hash_type,
+            reason = "order doesn't matter here",
+        )]
         for (five_tuple, alloc) in &self.allocations {
             if five_tuples.as_ref().map_or(true, |f| f.contains(five_tuple)) {
                 drop(infos.insert(
@@ -73,7 +76,6 @@ impl Manager {
 
     /// Creates a new [`Allocation`] with provided parameters and starts
     /// relaying it.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn create_allocation(
         &mut self,
         five_tuple: FiveTuple,

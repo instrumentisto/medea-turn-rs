@@ -233,7 +233,6 @@ impl Allocation {
 
     /// Adds a new [`ChannelBind`] to this [`Allocation`], also updating the
     /// [`Permission`]s needed for this [`ChannelBind`].
-    #[allow(clippy::significant_drop_tightening)] // false positive
     pub(crate) async fn add_channel_bind(
         &self,
         number: u16,
@@ -277,6 +276,7 @@ impl Allocation {
             );
 
             drop(channel_bindings.insert(number, bind));
+            drop(channel_bindings);
 
             // `ChannelBind`s also refresh `Permission`s.
             self.add_permission(peer_addr.ip()).await;
@@ -344,7 +344,8 @@ impl Allocation {
     /// [2]: https://tools.ietf.org/html/rfc5766#section-11.7
     /// [Section 8]: https://tools.ietf.org/html/rfc5766#section-8
     /// [Section 11]: https://tools.ietf.org/html/rfc5766#section-11
-    #[allow(clippy::too_many_lines)]
+    // TODO: Refactor to satisfy `clippy::too_many_lines` lint.
+    #[expect(clippy::too_many_lines, reason = "needs refactoring")]
     fn spawn_relay_handler(
         &self,
         mut refresh_rx: mpsc::Receiver<Duration>,
@@ -410,9 +411,9 @@ impl Allocation {
                                     transport::Error::TransportIsDead => {
                                         break;
                                     }
-                                    transport::Error::Decode(_)
-                                    | transport::Error::ChannelData(_)
-                                    | transport::Error::Io(_) => {
+                                    transport::Error::Decode(..)
+                                    | transport::Error::ChannelData(..)
+                                    | transport::Error::Io(..) => {
                                         log::warn!(
                                             "Failed to send `ChannelData` from \
                                              `Allocation(scr: {src_addr}`: {e}",

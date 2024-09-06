@@ -57,7 +57,8 @@ pub struct Server {
 #[async_trait]
 impl Transport for Server {
     async fn recv_from(&self) -> Result<(Request, SocketAddr), Error> {
-        if let Some((data, addr)) = self.ingress_rx.lock().await.recv().await {
+        let req_and_addr = self.ingress_rx.lock().await.recv().await;
+        if let Some((data, addr)) = req_and_addr {
             Ok((data, addr))
         } else {
             Err(Error::TransportIsDead)
@@ -70,7 +71,6 @@ impl Transport for Server {
         target: SocketAddr,
     ) -> Result<(), Error> {
         let mut writers = self.writers.lock().await;
-        #[allow(clippy::significant_drop_in_scrutinee)] // intentional
         match writers.entry(target) {
             Entry::Occupied(mut e) => {
                 let (res_tx, res_rx) = oneshot::channel();
@@ -80,7 +80,10 @@ impl Transport for Server {
 
                     Err(Error::TransportIsDead)
                 } else {
-                    #[allow(clippy::map_err_ignore)] // intentional
+                    #[expect( // intentional
+                        clippy::map_err_ignore,
+                        reason = "only errors on channel closing",
+                    )]
                     res_rx.await.map_err(|_| Error::TransportIsDead)?
                 }
             }
@@ -297,13 +300,14 @@ impl Decoder for Codec {
     type Item = Request;
     type Error = Error;
 
+    #[expect( // false positive
+        clippy::missing_asserts_for_indexing,
+        reason = "indexing is guarded with `if` condition"
+    )]
     fn decode(
         &mut self,
         src: &mut BytesMut,
     ) -> Result<Option<Self::Item>, Self::Error> {
-        // PANIC: Indexing is OK below, since we guard it with `if` condition.
-        #![allow(clippy::missing_asserts_for_indexing)] // false positive
-
         if self.current.is_none() && src.len() >= 4 {
             self.current = Some(RequestKind::detect_kind([
                 src[0], src[1], src[2], src[3],

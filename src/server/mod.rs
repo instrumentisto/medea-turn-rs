@@ -210,7 +210,7 @@ impl Server {
         username: String,
     ) -> Result<(), Error> {
         let (closed_tx, closed_rx) = mpsc::channel(1);
-        #[allow(clippy::map_err_ignore)] // intentional
+        #[expect(clippy::map_err_ignore, reason = "only errors on closing")]
         let _: usize = self
             .command_tx
             .send(Command::DeleteAllocations(username, Arc::new(closed_rx)))
@@ -245,7 +245,7 @@ impl Server {
 
         let (infos_tx, mut infos_rx) = mpsc::channel(1);
 
-        #[allow(clippy::map_err_ignore)] // intentional
+        #[expect(clippy::map_err_ignore, reason = "only errors on closing")]
         let _: usize = self
             .command_tx
             .send(Command::GetAllocationsInfo(five_tuples, infos_tx))

@@ -42,11 +42,11 @@ pub struct ChannelData {
 
 impl ChannelData {
     /// Checks whether the provided `data` represents a [`ChannelData`] message.
+    #[expect( // false positive
+        clippy::missing_asserts_for_indexing,
+        reason = "length is checked with the first `if` expression",
+    )]
     pub(crate) fn is_channel_data(data: &[u8]) -> bool {
-        // PANIC: Indexing is OK here, since the length is checked with the
-        //        first `if` expression.
-        #![allow(clippy::missing_asserts_for_indexing)] // false positive
-
         if data.len() < HEADER_SIZE {
             return false;
         }
@@ -118,7 +118,7 @@ impl ChannelData {
         let length = HEADER_SIZE + payload.len();
         let padded_length = nearest_padded_value_length(length);
 
-        #[allow(clippy::map_err_ignore)] // intentional
+        #[expect(clippy::map_err_ignore, reason = "useless")]
         let len = u16::try_from(payload.len())
             .map_err(|_| FormatError::BadChannelDataLength)?;
 

@@ -6,6 +6,20 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## [0.10.0] · 202?-??-?? (unreleased)
+[0.10.0]: /../../tree/v0.10.0
+
+[Diff](/../../compare/v0.9.2...v0.10.0)
+
+### BC Breaks
+
+- Bumped up [MSRV] to 1.81 because for `#[expect]` attribute usage. ([todo])
+
+[todo]: /../../commit/todo
+
+
+
+
 ## [0.9.2] · 2024-07-11
 [0.9.2]: /../../tree/v0.9.2
 
