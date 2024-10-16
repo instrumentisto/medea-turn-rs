@@ -9,6 +9,7 @@ use std::{
 };
 
 use rand::{distributions::Alphanumeric, random, Rng};
+use secrecy::{ExposeSecret, SecretString};
 use stun_codec::{
     rfc5389::{
         errors::{BadRequest, StaleNonce, Unauthorized, UnknownAttribute},
@@ -205,7 +206,7 @@ async fn handle_allocate_request(
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
-    pass: Box<str>,
+    pass: SecretString,
 ) -> Result<(), Error> {
     // 1. The server MUST require that the request be authenticated.  This
     //    authentication MUST be done using the long-term credential
@@ -413,7 +414,10 @@ async fn handle_allocate_request(
         msg.add_attribute(XorMappedAddress::new(five_tuple.src_addr));
 
         let integrity = MessageIntegrity::new_long_term_credential(
-            &msg, &uname, &realm, &pass,
+            &msg,
+            &uname,
+            &realm,
+            pass.expose_secret(),
         )
         .map_err(|e| Error::Encode(*e.kind()))?;
         msg.add_attribute(integrity);
@@ -436,7 +440,7 @@ async fn authenticate_request(
     nonces: &mut HashMap<String, Instant>,
     five_tuple: FiveTuple,
     realm: &str,
-) -> Result<Option<(Username, Realm, Box<str>)>, Error> {
+) -> Result<Option<(Username, Realm, SecretString)>, Error> {
     let Some(integrity) = msg.get_attribute::<MessageIntegrity>() else {
         respond_with_nonce(
             msg,
@@ -504,9 +508,11 @@ async fn authenticate_request(
         return Err(Error::NoSuchUser);
     };
 
-    if let Err(err) =
-        integrity.check_long_term_credential(uname_attr, realm_attr, &pass)
-    {
+    if let Err(err) = integrity.check_long_term_credential(
+        uname_attr,
+        realm_attr,
+        pass.expose_secret(),
+    ) {
         respond_with_err(msg, err, conn, five_tuple.src_addr).await?;
 
         Err(Error::IntegrityMismatch)
@@ -554,7 +560,7 @@ async fn handle_refresh_request(
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
-    pass: Box<str>,
+    pass: SecretString,
 ) -> Result<(), Error> {
     log::trace!("Received `RefreshRequest` from {}", five_tuple.src_addr);
 
@@ -600,9 +606,13 @@ async fn handle_refresh_request(
         Lifetime::new(lifetime_duration)
             .map_err(|e| Error::Encode(*e.kind()))?,
     );
-    let integrity =
-        MessageIntegrity::new_long_term_credential(&msg, &uname, &realm, &pass)
-            .map_err(|e| Error::Encode(*e.kind()))?;
+    let integrity = MessageIntegrity::new_long_term_credential(
+        &msg,
+        &uname,
+        &realm,
+        pass.expose_secret(),
+    )
+    .map_err(|e| Error::Encode(*e.kind()))?;
     msg.add_attribute(integrity);
 
     send_to(msg, conn, five_tuple.src_addr).await
@@ -622,7 +632,7 @@ async fn handle_create_permission_request(
     five_tuple: FiveTuple,
     uname: Username,
     realm: Realm,
-    pass: Box<str>,
+    pass: SecretString,
 ) -> Result<(), Error> {
     log::trace!("Received `CreatePermission` from {}", five_tuple.src_addr);
 
@@ -672,7 +682,10 @@ async fn handle_create_permission_request(
         let mut msg =
             Message::new(resp_class, CREATE_PERMISSION, msg.transaction_id());
         let integrity = MessageIntegrity::new_long_term_credential(
-            &msg, &uname, &realm, &pass,
+            &msg,
+            &uname,
+            &realm,
+            pass.expose_secret(),
         )
         .map_err(|e| Error::Encode(*e.kind()))?;
         msg.add_attribute(integrity);
@@ -732,7 +745,7 @@ async fn handle_channel_bind_request(
     channel_bind_lifetime: Duration,
     uname: Username,
     realm: Realm,
-    pass: Box<str>,
+    pass: SecretString,
 ) -> Result<(), Error> {
     if let Some(alloc) = allocs.get_alloc(&five_tuple) {
         let Some(ch_num) =
@@ -788,7 +801,10 @@ async fn handle_channel_bind_request(
         );
 
         let integrity = MessageIntegrity::new_long_term_credential(
-            &msg, &uname, &realm, &pass,
+            &msg,
+            &uname,
+            &realm,
+            pass.expose_secret(),
         )
         .map_err(|e| Error::Encode(*e.kind()))?;
         msg.add_attribute(integrity);
@@ -963,6 +979,7 @@ mod handle_spec {
     };
 
     use rand::random;
+    use secrecy::SecretString;
     use stun_codec::{
         rfc5766::methods::REFRESH, Message, MessageClass, TransactionId,
     };
@@ -991,7 +1008,7 @@ mod handle_spec {
             _username: &str,
             _realm: &str,
             _src_addr: SocketAddr,
-        ) -> Result<Box<str>, Error> {
+        ) -> Result<SecretString, Error> {
             Ok(STATIC_KEY.to_owned().into())
         }
     }
