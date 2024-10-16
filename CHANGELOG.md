@@ -13,11 +13,11 @@ All user visible changes to this project will be documented in this file. This p
 
 ### BC Breaks
 
-- Bumped up [MSRV] to 1.81 because for `#[expect]` attribute usage. ([todo])
+- Bumped up [MSRV] to 1.81 because for `#[expect]` attribute usage. ([b0a1dfb6])
 - Changed return type of `AuthHandler::auth_handle` to [`SecretString`]. ([#3])
 
 [`SecretString`]: https://docs.rs/secrecy/0.10.3/secrecy/type.SecretString.html
-[todo]: /../../commit/todo
+[b0a1dfb6]: /../../commit/b0a1dfb696b044d08fa720f2d3e52ed65a12e521
 [#3]: /../../pull/3
 
 
