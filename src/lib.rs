@@ -159,6 +159,7 @@ pub mod transport;
 use std::{net::SocketAddr, sync::Arc};
 
 use derive_more::{Display, Error as StdError, From};
+use secrecy::SecretString;
 
 #[cfg(test)]
 pub(crate) use self::allocation::Allocation;
@@ -190,7 +191,7 @@ pub trait AuthHandler {
         username: &str,
         realm: &str,
         src_addr: SocketAddr,
-    ) -> Result<Box<str>, Error>;
+    ) -> Result<SecretString, Error>;
 }
 
 impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
@@ -199,7 +200,7 @@ impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
         username: &str,
         realm: &str,
         src_addr: SocketAddr,
-    ) -> Result<Box<str>, Error> {
+    ) -> Result<SecretString, Error> {
         (**self).auth_handle(username, realm, src_addr)
     }
 }

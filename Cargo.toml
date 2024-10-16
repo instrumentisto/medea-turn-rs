@@ -22,6 +22,7 @@ derive_more = { version = "1.0.0-beta.6", features = ["debug", "display", "error
 futures = "0.3.30"
 log = "0.4"
 rand = "0.8"
+secrecy = "0.10"
 stun_codec = "0.3.5"
 tokio = { version = "1.32", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 tokio-util = { version = "0.7.11", features = ["codec"] }
