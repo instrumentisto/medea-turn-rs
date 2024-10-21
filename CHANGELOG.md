@@ -6,7 +6,7 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
-## [0.10.0] · 202?-??-?? (unreleased)
+## [0.10.0] · 2024-10-21
 [0.10.0]: /../../tree/v0.10.0
 
 [Diff](/../../compare/v0.9.2...v0.10.0)
