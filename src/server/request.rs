@@ -1,6 +1,6 @@
 //! Ingress [`Request`] handling.
 
-use bytecodec::EncodeExt;
+use bytecodec::EncodeExt as _;
 use std::{
     collections::HashMap,
     marker::{Send, Sync},
@@ -8,8 +8,8 @@ use std::{
     sync::Arc,
 };
 
-use rand::{distributions::Alphanumeric, random, Rng};
-use secrecy::{ExposeSecret, SecretString};
+use rand::{distributions::Alphanumeric, random, Rng as _};
+use secrecy::{ExposeSecret as _, SecretString};
 use stun_codec::{
     rfc5389::{
         errors::{BadRequest, StaleNonce, Unauthorized, UnknownAttribute},

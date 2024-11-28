@@ -10,9 +10,9 @@ use std::{
 };
 
 use async_trait::async_trait;
-use bytecodec::DecodeExt;
+use bytecodec::DecodeExt as _;
 use bytes::BytesMut;
-use futures::StreamExt;
+use futures::StreamExt as _;
 use stun_codec::MessageDecoder;
 use tokio::{
     io::AsyncWriteExt as _,

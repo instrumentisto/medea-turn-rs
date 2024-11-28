@@ -50,7 +50,7 @@ impl Manager {
     /// provided [`FiveTuple`]s.
     pub(crate) fn get_allocations_info(
         &self,
-        five_tuples: &Option<Vec<FiveTuple>>,
+        five_tuples: Option<&Vec<FiveTuple>>,
     ) -> HashMap<FiveTuple, Info> {
         let mut infos = HashMap::new();
 
@@ -59,7 +59,7 @@ impl Manager {
             reason = "order doesn't matter here",
         )]
         for (five_tuple, alloc) in &self.allocations {
-            if five_tuples.as_ref().map_or(true, |f| f.contains(five_tuple)) {
+            if five_tuples.map_or(true, |f| f.contains(five_tuple)) {
                 drop(infos.insert(
                     *five_tuple,
                     Info::new(

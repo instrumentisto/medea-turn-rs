@@ -17,7 +17,7 @@ use std::{
     },
 };
 
-use bytecodec::EncodeExt;
+use bytecodec::EncodeExt as _;
 use derive_more::Display;
 use rand::random;
 use stun_codec::{

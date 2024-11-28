@@ -147,7 +147,9 @@ impl Server {
                                     tx,
                                 )) => {
                                     let infos = allocation_manager
-                                        .get_allocations_info(&five_tuples);
+                                        .get_allocations_info(
+                                            five_tuples.as_ref(),
+                                        );
                                     drop(tx.send(infos).await);
                                 }
                                 Err(RecvError::Closed) => {
