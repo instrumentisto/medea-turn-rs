@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use rand::{distributions::Alphanumeric, random, Rng as _};
+use rand::{distr::Alphanumeric, random, Rng as _};
 use secrecy::{ExposeSecret as _, SecretString};
 use stun_codec::{
     rfc5389::{
@@ -829,7 +829,7 @@ async fn respond_with_nonce(
     five_tuple: FiveTuple,
     nonces: &mut HashMap<String, Instant>,
 ) -> Result<(), Error> {
-    let nonce: String = rand::thread_rng()
+    let nonce: String = rand::rng()
         .sample_iter(&Alphanumeric)
         .take(8)
         .map(char::from)
