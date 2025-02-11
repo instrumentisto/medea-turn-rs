@@ -18,7 +18,7 @@ use std::{
 };
 
 use bytecodec::EncodeExt as _;
-use derive_more::Display;
+use derive_more::with_trait::Display;
 use rand::random;
 use stun_codec::{
     rfc5766::methods::DATA, Message, MessageClass, MessageEncoder,

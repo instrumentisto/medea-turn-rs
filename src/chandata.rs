@@ -2,7 +2,7 @@
 //!
 //! [1]: https://tools.ietf.org/html/rfc5766#section-11.4
 
-use derive_more::{Display, Error};
+use derive_more::with_trait::{Display, Error};
 
 use crate::attr::ChannelNumber;
 

@@ -160,7 +160,7 @@ pub mod transport;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use derive_more::{Display, Error as StdError, From};
+use derive_more::with_trait::{Display, Error as StdError, From};
 use secrecy::SecretString;
 
 #[cfg(test)]

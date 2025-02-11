@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 
 use async_trait::async_trait;
 use bytecodec::DecodeExt as _;
-use derive_more::{Display, Error as StdError, From};
+use derive_more::with_trait::{Display, Error as StdError, From};
 use stun_codec::{Message, MessageDecoder};
 use tokio::net::{self, ToSocketAddrs};
 

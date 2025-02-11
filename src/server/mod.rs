@@ -7,7 +7,7 @@ mod request;
 
 use std::{collections::HashMap, sync::Arc};
 
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 use tokio::{
     sync::{
         broadcast::{
