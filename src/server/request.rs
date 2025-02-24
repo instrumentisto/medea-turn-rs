@@ -1,6 +1,5 @@
 //! Ingress [`Request`] handling.
 
-use bytecodec::EncodeExt as _;
 use std::{
     collections::HashMap,
     marker::{Send, Sync},
@@ -8,9 +7,11 @@ use std::{
     sync::Arc,
 };
 
-use rand::{distr::Alphanumeric, random, Rng as _};
+use bytecodec::EncodeExt as _;
+use rand::{Rng as _, distr::Alphanumeric, random};
 use secrecy::{ExposeSecret as _, SecretString};
 use stun_codec::{
+    Attribute as _, Message, MessageClass, MessageEncoder, TransactionId,
     rfc5389::{
         errors::{BadRequest, StaleNonce, Unauthorized, UnknownAttribute},
         methods::BINDING,
@@ -23,26 +24,25 @@ use stun_codec::{
         methods::{ALLOCATE, CHANNEL_BIND, CREATE_PERMISSION, REFRESH, SEND},
     },
     rfc8656::errors::{AddressFamilyNotSupported, PeerAddressFamilyMismatch},
-    Attribute as _, Message, MessageClass, MessageEncoder, TransactionId,
 };
 use tokio::time::{Duration, Instant};
 
 #[cfg(doc)]
 use crate::allocation::Allocation;
 use crate::{
+    AuthHandler, Error,
     allocation::{FiveTuple, Manager},
     attr::{
         AddressFamily, Attribute, ChannelNumber, Data, DontFragment, ErrorCode,
-        EvenPort, Fingerprint, Lifetime, MessageIntegrity, Nonce, Realm,
-        RequestedAddressFamily, RequestedTransport, ReservationToken,
+        EvenPort, Fingerprint, Lifetime, MessageIntegrity, Nonce, PROTO_UDP,
+        Realm, RequestedAddressFamily, RequestedTransport, ReservationToken,
         UnknownAttributes, Username, XorMappedAddress, XorPeerAddress,
-        XorRelayAddress, PROTO_UDP,
+        XorRelayAddress,
     },
     chandata::ChannelData,
     server::DEFAULT_LIFETIME,
     transport,
     transport::{Request, Transport},
-    AuthHandler, Error,
 };
 
 /// Maximum allowed lifetime of an [allocation][1].
@@ -266,9 +266,9 @@ async fn handle_allocate_request(
             msg.transaction_id(),
         );
         msg.add_attribute(ErrorCode::from(UnknownAttribute));
-        msg.add_attribute(UnknownAttributes::new(
-            vec![DontFragment.get_type()],
-        ));
+        msg.add_attribute(UnknownAttributes::new(vec![
+            DontFragment.get_type(),
+        ]));
 
         send_to(msg, conn, five_tuple.src_addr).await?;
 
@@ -461,15 +461,13 @@ async fn authenticate_request(
 
     let stale_nonce = {
         // Assert that the nonce exists and is not yet expired.
-        let stale_nonce = nonces.get(nonce_attr.value()).map_or(
-            true,
-            |nonce_creation_time| {
+        let stale_nonce =
+            nonces.get(nonce_attr.value()).is_none_or(|nonce_creation_time| {
                 Instant::now()
                     .checked_duration_since(*nonce_creation_time)
                     .unwrap_or_else(|| Duration::from_secs(0))
                     >= NONCE_LIFETIME
-            },
-        );
+            });
 
         if stale_nonce {
             _ = nonces.remove(nonce_attr.value());
@@ -508,12 +506,12 @@ async fn authenticate_request(
         return Err(Error::NoSuchUser);
     };
 
-    if let Err(err) = integrity.check_long_term_credential(
+    if let Err(e) = integrity.check_long_term_credential(
         uname_attr,
         realm_attr,
         pass.expose_secret(),
     ) {
-        respond_with_err(msg, err, conn, five_tuple.src_addr).await?;
+        respond_with_err(msg, e, conn, five_tuple.src_addr).await?;
 
         Err(Error::IntegrityMismatch)
     } else {
@@ -725,7 +723,7 @@ async fn handle_send_indication(
         return Err(Error::NoPermission);
     }
 
-    a.relay(data_attr.data(), peer_address).await.map_err(Into::into)
+    a.relay(data_attr.data(), peer_address).await
 }
 
 /// Handles the provided [`Message`] as a [ChannelBind Request][1].
@@ -916,13 +914,13 @@ fn get_lifetime(m: &Message<Attribute>) -> Duration {
 mod get_lifetime_spec {
     use std::time::Duration;
 
-    use crate::attr::Lifetime;
     use rand::random;
     use stun_codec::{
-        rfc5766::methods::ALLOCATE, Message, MessageClass, TransactionId,
+        Message, MessageClass, TransactionId, rfc5766::methods::ALLOCATE,
     };
 
-    use super::{get_lifetime, DEFAULT_LIFETIME, MAXIMUM_ALLOCATION_LIFETIME};
+    use super::{DEFAULT_LIFETIME, MAXIMUM_ALLOCATION_LIFETIME, get_lifetime};
+    use crate::attr::Lifetime;
 
     #[tokio::test]
     async fn lifetime_parsing() {
@@ -981,22 +979,20 @@ mod handle_spec {
     use rand::random;
     use secrecy::SecretString;
     use stun_codec::{
-        rfc5766::methods::REFRESH, Message, MessageClass, TransactionId,
+        Message, MessageClass, TransactionId, rfc5766::methods::REFRESH,
     };
     use tokio::{
         net::UdpSocket,
         time::{Duration, Instant},
     };
 
+    use super::handle;
     use crate::{
-        allocation,
+        AuthHandler, Error, FiveTuple, Transport, allocation,
         attr::{Attribute, Lifetime, MessageIntegrity, Nonce, Realm, Username},
         relay,
         transport::Request,
-        AuthHandler, Error, FiveTuple, Transport,
     };
-
-    use super::handle;
 
     const STATIC_KEY: &str = "ABC";
 

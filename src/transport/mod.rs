@@ -5,26 +5,22 @@
 
 mod tcp;
 
-use std::io;
-
-use std::net::SocketAddr;
+use std::{io, net::SocketAddr};
 
 use async_trait::async_trait;
 use bytecodec::DecodeExt as _;
 use derive_more::with_trait::{Display, Error as StdError, From};
 use stun_codec::{Message, MessageDecoder};
+pub use tokio::net::UdpSocket;
 use tokio::net::{self, ToSocketAddrs};
 
+pub use self::tcp::Server as TcpServer;
 use crate::{
     attr::{Attribute, PROTO_UDP},
     chandata,
     chandata::ChannelData,
     server::INBOUND_MTU,
 };
-
-pub use tokio::net::UdpSocket;
-
-pub use self::tcp::Server as TcpServer;
 
 /// Parsed ingress [STUN]/[TURN] message.
 ///

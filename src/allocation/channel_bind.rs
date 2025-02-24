@@ -5,8 +5,8 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use tokio::{
-    sync::{mpsc, Mutex},
-    time::{sleep, Instant},
+    sync::{Mutex, mpsc},
+    time::{Instant, sleep},
 };
 
 /// Representation of a [channel].
@@ -91,14 +91,13 @@ mod allocation_spec {
 
     use tokio::net::UdpSocket;
 
-    use crate::{
-        attr::{ChannelNumber, Username},
-        server::DEFAULT_LIFETIME,
-        Allocation, Error, FiveTuple,
-    };
-
     #[cfg(doc)]
     use super::ChannelBind;
+    use crate::{
+        Allocation, Error, FiveTuple,
+        attr::{ChannelNumber, Username},
+        server::DEFAULT_LIFETIME,
+    };
 
     /// Creates an [`Allocation`] with a bound [`ChannelBind`] for testing
     /// purposes.

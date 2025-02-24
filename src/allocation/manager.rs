@@ -9,9 +9,8 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use crate::{attr::Username, relay, Error};
-
 use super::{Allocation, DynTransport, FiveTuple, Info};
+use crate::{Error, attr::Username, relay};
 
 /// Configuration parameters of a [`Manager`].
 #[derive(Debug)]
@@ -59,7 +58,7 @@ impl Manager {
             reason = "order doesn't matter here",
         )]
         for (five_tuple, alloc) in &self.allocations {
-            if five_tuples.map_or(true, |f| f.contains(five_tuple)) {
+            if five_tuples.is_none_or(|f| f.contains(five_tuple)) {
                 drop(infos.insert(
                     *five_tuple,
                     Info::new(
@@ -164,15 +163,14 @@ mod spec {
     use stun_codec::MessageDecoder;
     use tokio::{net::UdpSocket, sync::mpsc, time::sleep};
 
+    use super::{Config, DynTransport, Manager};
     use crate::{
+        Error, FiveTuple,
         attr::{Attribute, ChannelNumber, Data, Username},
         chandata::ChannelData,
         relay,
         server::DEFAULT_LIFETIME,
-        Error, FiveTuple,
     };
-
-    use super::{Config, DynTransport, Manager};
 
     /// Creates a new [`Manager`] for testing purposes.
     fn create_manager() -> Manager {

@@ -1,8 +1,8 @@
 [package]
 name = "medea-turn"
 version = "0.10.1"
-edition = "2021"
-rust-version = "1.81"
+edition = "2024"
+rust-version = "1.85"
 description = "STUN/TURN server implementation used by Medea media server."
 authors = ["Instrumentisto Team <developer@instrumentisto.com>"]
 license = "MIT OR Apache-2.0"

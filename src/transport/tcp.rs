@@ -4,7 +4,7 @@
 //! [TURN]: https://en.wikipedia.org/wiki/TURN
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     net::SocketAddr,
     sync::Arc,
 };
@@ -17,16 +17,15 @@ use stun_codec::MessageDecoder;
 use tokio::{
     io::AsyncWriteExt as _,
     net::{TcpListener, TcpStream},
-    sync::{mpsc, mpsc::error::TrySendError, oneshot, Mutex},
+    sync::{Mutex, mpsc, mpsc::error::TrySendError, oneshot},
 };
 use tokio_util::codec::{Decoder, FramedRead};
 
+use super::{Error, Request, Transport};
 use crate::{
     attr::{Attribute, PROTO_TCP},
-    chandata::{nearest_padded_value_length, ChannelData},
+    chandata::{ChannelData, nearest_padded_value_length},
 };
-
-use super::{Error, Request, Transport};
 
 /// Shortcut for a [`HashMap`] of active TCP sessions.
 type TcpWritersMap = Arc<

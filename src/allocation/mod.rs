@@ -12,8 +12,8 @@ use std::{
     mem,
     net::{IpAddr, SocketAddr},
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -21,26 +21,25 @@ use bytecodec::EncodeExt as _;
 use derive_more::with_trait::Display;
 use rand::random;
 use stun_codec::{
-    rfc5766::methods::DATA, Message, MessageClass, MessageEncoder,
-    TransactionId,
+    Message, MessageClass, MessageEncoder, TransactionId,
+    rfc5766::methods::DATA,
 };
 use tokio::{
     net::UdpSocket,
-    sync::{mpsc, Mutex},
-    time::{sleep, Duration, Instant},
+    sync::{Mutex, mpsc},
+    time::{Duration, Instant, sleep},
 };
 
+pub(crate) use self::manager::{Config as ManagerConfig, Manager};
+use self::{channel_bind::ChannelBind, permission::Permission};
 use crate::{
+    Error, Transport,
     allocation::permission::PERMISSION_LIFETIME,
     attr::{Attribute, Data, Username, XorPeerAddress},
     chandata::ChannelData,
     server::INBOUND_MTU,
-    transport, Error, Transport,
+    transport,
 };
-
-use self::{channel_bind::ChannelBind, permission::Permission};
-
-pub(crate) use self::manager::{Config as ManagerConfig, Manager};
 
 /// Shortcut for a [`Transport`] trait object.
 type DynTransport = Arc<dyn Transport + Send + Sync>;
@@ -218,7 +217,6 @@ impl Allocation {
         }
 
         let mut permissions = self.permissions.lock().await;
-
         if let Some(existed_permission) = permissions.get(&ip) {
             existed_permission.refresh(PERMISSION_LIFETIME).await;
         } else {
@@ -514,12 +512,11 @@ mod spec {
 
     use tokio::net::UdpSocket;
 
+    use super::{Allocation, FiveTuple};
     use crate::{
-        attr::{ChannelNumber, Username, PROTO_UDP},
+        attr::{ChannelNumber, PROTO_UDP, Username},
         server::DEFAULT_LIFETIME,
     };
-
-    use super::{Allocation, FiveTuple};
 
     impl Default for FiveTuple {
         fn default() -> Self {
@@ -673,8 +670,8 @@ mod five_tuple_spec {
     use std::net::SocketAddr;
 
     use crate::{
-        attr::{PROTO_TCP, PROTO_UDP},
         FiveTuple,
+        attr::{PROTO_TCP, PROTO_UDP},
     };
 
     #[test]

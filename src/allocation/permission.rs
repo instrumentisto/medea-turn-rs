@@ -6,8 +6,8 @@
 use std::{collections::HashMap, net::IpAddr, sync::Arc};
 
 use tokio::{
-    sync::{mpsc, Mutex},
-    time::{sleep, Duration, Instant},
+    sync::{Mutex, mpsc},
+    time::{Duration, Instant, sleep},
 };
 
 /// [Lifetime][1] of a [`Permission`].

@@ -6,6 +6,19 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## main
+
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.10.1...main)
+
+### BC Breaks
+
+- Bumped up [MSRV] to 1.85 because of migration to 2024 edition. ([todo])
+
+[todo]: https://github.com/instrumentisto/medea-turn-rs/commit/todo
+
+
+
+
 ## [0.10.1] · 2025-02-11
 [0.10.1]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.10.1
 

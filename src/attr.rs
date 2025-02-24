@@ -5,7 +5,6 @@
 //! [TURN]: https://en.wikipedia.org/wiki/TURN
 
 use stun_codec::define_attribute_enums;
-
 pub use stun_codec::{
     rfc5389::attributes::{
         AlternateServer, ErrorCode, Fingerprint, MappedAddress,

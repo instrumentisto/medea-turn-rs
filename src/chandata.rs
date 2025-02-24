@@ -157,9 +157,8 @@ pub enum FormatError {
 
 #[cfg(test)]
 mod spec {
-    use crate::attr::ChannelNumber;
-
     use super::{ChannelData, FormatError};
+    use crate::attr::ChannelNumber;
 
     #[test]
     fn encodes() {

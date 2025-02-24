@@ -4,9 +4,10 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
+
 use tokio::net::UdpSocket;
 
-use crate::{transport, Error};
+use crate::{Error, transport};
 
 /// Generator of relay addresses when creating an [allocation].
 ///

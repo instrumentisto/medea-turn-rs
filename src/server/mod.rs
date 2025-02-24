@@ -22,10 +22,10 @@ use tokio::{
 #[cfg(doc)]
 use crate::allocation::Allocation;
 use crate::{
+    AuthHandler, Error,
     allocation::{FiveTuple, Info, Manager, ManagerConfig},
     relay,
     transport::Transport,
-    AuthHandler, Error,
 };
 
 /// Default lifetime of an [allocation][1] (10 minutes) as defined in
