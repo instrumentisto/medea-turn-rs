@@ -426,7 +426,7 @@ impl Allocation {
                                  `Allocation(src: {src_addr})`: {e}",
                             );
                         }
-                    };
+                    }
                 } else {
                     let has_permission =
                         permissions.lock().await.contains_key(&src_addr.ip());

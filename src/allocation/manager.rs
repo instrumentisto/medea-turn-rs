@@ -118,7 +118,8 @@ impl Manager {
         &self,
         five_tuple: &FiveTuple,
     ) -> Option<&Allocation> {
-        self.allocations.get(five_tuple).and_then(|a| a.is_alive().then_some(a))
+        let alloc = self.allocations.get(five_tuple)?;
+        alloc.is_alive().then_some(alloc)
     }
 
     /// Removes the [`Allocation`] matching the provided [`FiveTuple`], if any.
