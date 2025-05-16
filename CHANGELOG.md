@@ -6,18 +6,19 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
-## main
+## [0.11.0] · 2025-05-16
+[0.11.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.0
 
-[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.10.1...main)
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.10.1...v0.11.0)
 
 ### BC Breaks
 
 - Bumped up [MSRV] to 1.85 because of migration to 2024 edition. ([c265d063])
-- Upgraded `bytecodec` to 0.5 version. ([todo])
-- Upgraded `stun_codec` to 0.4 version. ([todo])
+- Upgraded `bytecodec` to 0.5 version. ([60a30d53])
+- Upgraded `stun_codec` to 0.4 version. ([60a30d53])
 
+[60a30d53]: https://github.com/instrumentisto/medea-turn-rs/commit/60a30d5326645963afb572a452df660e680978f3
 [c265d063]: https://github.com/instrumentisto/medea-turn-rs/commit/c265d0638f34dd50284fc4fe83fdfa2329ff9ee8
-[todo]: https://github.com/instrumentisto/medea-turn-rs/commit/todo
 
 
 
