@@ -159,7 +159,7 @@ mod spec {
         time::Duration,
     };
 
-    use bytecodec::DecodeExt;
+    use bytecodec::DecodeExt as _;
     use rand::random;
     use stun_codec::MessageDecoder;
     use tokio::{net::UdpSocket, sync::mpsc, time::sleep};

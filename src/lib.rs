@@ -87,6 +87,7 @@
     clippy::shadow_unrelated,
     clippy::significant_drop_in_scrutinee,
     clippy::significant_drop_tightening,
+    clippy::single_option_map,
     clippy::str_to_string,
     clippy::string_add,
     clippy::string_lit_as_bytes,
@@ -168,7 +169,6 @@ pub use self::{
 mod minimal_versions {
     use byteorder1 as _;
     use trackable1 as _;
-    use trackable02 as _;
 }
 
 /// Authentication handler.

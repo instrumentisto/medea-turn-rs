@@ -16,21 +16,20 @@ include = ["/src/", "/CHANGELOG.md", "/LICENSE-APACHE", "/LICENSE-MIT", "/README
 
 [dependencies]
 async-trait = "0.1.43"
-bytecodec = "0.4.15"
+bytecodec = "0.5"
 bytes = "1.6"
 derive_more = { version = "2.0", features = ["debug", "display", "error", "from"] }
 futures = "0.3.30"
-log = "0.4"
+log = "0.4.25"
 rand = "0.9"
 secrecy = "0.10"
-stun_codec = "0.3.5"
+stun_codec = "0.4"
 tokio = { version = "1.32", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 tokio-util = { version = "0.7.11", features = ["codec"] }
 
 # TODO: Try remove once `bytecodec` is updated to new major version.
 # Not really used, for surviving `minimal-versions` check only.
 byteorder1 = { version = "1.5", package = "byteorder", default-features = false }
-trackable02 = { version = "0.2.24", package = "trackable", default-features = false }
 trackable1 = { version = "1.3", package = "trackable", default-features = false }
 
 [dev-dependencies]
