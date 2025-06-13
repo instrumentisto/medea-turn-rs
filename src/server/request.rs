@@ -8,10 +8,10 @@ use std::{
 };
 
 use bytecodec::EncodeExt as _;
-use rand::{Rng as _, distr::Alphanumeric, random};
+use rand::{Rng as _, distr::Alphanumeric};
 use secrecy::{ExposeSecret as _, SecretString};
 use stun_codec::{
-    Attribute as _, Message, MessageClass, MessageEncoder, TransactionId,
+    Attribute as _, Message, MessageClass, MessageEncoder,
     rfc5389::{
         errors::{BadRequest, StaleNonce, Unauthorized, UnknownAttribute},
         methods::BINDING,
@@ -151,7 +151,7 @@ pub(crate) async fn handle(
                     }
                 }
                 (BINDING, Request) => {
-                    handle_binding_request(conn, five_tuple).await
+                    handle_binding_request(msg, conn, five_tuple).await
                 }
                 (SEND, Indication) => {
                     handle_send_indication(msg, allocs, five_tuple).await
@@ -526,6 +526,7 @@ async fn authenticate_request(
 ///
 /// See the [`Error`] for details.
 async fn handle_binding_request(
+    msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
     five_tuple: FiveTuple,
 ) -> Result<(), Error> {
@@ -534,7 +535,7 @@ async fn handle_binding_request(
     let mut msg = Message::new(
         MessageClass::SuccessResponse,
         BINDING,
-        TransactionId::new(random()),
+        msg.transaction_id(),
     );
     msg.add_attribute(XorMappedAddress::new(five_tuple.src_addr));
     let fingerprint =

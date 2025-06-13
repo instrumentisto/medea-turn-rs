@@ -6,6 +6,20 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## [0.11.1] · 2025-06-13
+[0.11.1]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.1
+
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.11.0...v0.11.1)
+
+### Fixed
+
+- Bad transaction ID in Binding response. ([#6])
+
+[#6]: https://github.com/instrumentisto/medea-turn-rs/pull/6
+
+
+
+
 ## [0.11.0] · 2025-05-16
 [0.11.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.0
 
