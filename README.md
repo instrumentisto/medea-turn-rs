@@ -7,7 +7,7 @@
 [![CI](https://github.com/instrumentisto/medea-turn-rs/actions/workflows/ci.yml/badge.svg?branch=main "CI")](https://github.com/instrumentisto/medea-turn-rs/actions?query=workflow%3ACI+branch%3Amain)
 [![Rust docs](https://docs.rs/medea-turn/badge.svg "Rust docs")](https://docs.rs/medea-turn)
 
-[Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.0/CHANGELOG.md)
+[Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.1/CHANGELOG.md)
 
 [STUN]/[TURN] server implementation used by [Medea media server](https://github.com/instrumentisto/medea).
 
@@ -27,7 +27,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 
 
-[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.0/LICENSE-APACHE
-[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.0/LICENSE-MIT
+[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.1/LICENSE-APACHE
+[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.1/LICENSE-MIT
 [STUN]: https://en.wikipedia.org/wiki/STUN
 [TURN]: https://en.wikipedia.org/wiki/TURN
