@@ -25,7 +25,7 @@ use crate::{
     AuthHandler, Error,
     allocation::{FiveTuple, Info, Manager, ManagerConfig},
     relay,
-    transport::{Transport, self},
+    transport::{self, Transport},
 };
 
 /// Default lifetime of an [allocation][1] (10 minutes) as defined in
@@ -168,11 +168,14 @@ impl Server {
                             match v {
                                 Ok(v) => v,
                                 Err(e) => match e {
-                                    transport::Error::TransportIsDead | transport::Error::Io(_) => {
-                                        log::error!("Exit read loop on transport recv error: {e}");
+                                    transport::Error::TransportIsDead |
+                                    transport::Error::Io(_) => {
+                                        log::error!("Exit read loop on \
+                                            transport recv error: {e}");
                                         break;
                                     },
-                                    _ => {
+                                    transport::Error::Decode(_) |
+                                    transport::Error::ChannelData(_) => {
                                         log::debug!("Request parse error: {e}");
                                         continue;
                                     },
