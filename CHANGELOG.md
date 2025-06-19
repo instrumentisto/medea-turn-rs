@@ -13,7 +13,7 @@ All user visible changes to this project will be documented in this file. This p
 
 ### Fixed
 
-- Bad transaction ID in Binding response. ([#6])
+- Wrong transaction ID in binding `BINDING` response. ([#6])
 
 [#6]: https://github.com/instrumentisto/medea-turn-rs/pull/6
 
