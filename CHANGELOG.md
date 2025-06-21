@@ -6,6 +6,20 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## [0.11.2] · unreleased
+[0.11.2]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.2
+
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.11.1...v0.11.2)
+
+### Fixed
+
+- Transport loop exiting on non-fatal errors. ([#7])
+
+[#7]: https://github.com/instrumentisto/medea-turn-rs/pull/7
+
+
+
+
 ## [0.11.1] · 2025-06-13
 [0.11.1]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.1
 

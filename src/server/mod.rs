@@ -25,7 +25,7 @@ use crate::{
     AuthHandler, Error,
     allocation::{FiveTuple, Info, Manager, ManagerConfig},
     relay,
-    transport::Transport,
+    transport::{self, Transport},
 };
 
 /// Default lifetime of an [allocation][1] (10 minutes) as defined in
@@ -167,9 +167,16 @@ impl Server {
                         v = conn.recv_from() => {
                             match v {
                                 Ok(v) => v,
-                                Err(e) => {
-                                    log::debug!("Exit read loop on error: {e}");
+                                Err(e) if e.is_fatal() => {
+                                    log::error!(
+                                        "Exit `Server` read loop on transport \
+                                         recv error: {e}",
+                                    );
                                     break;
+                                }
+                                Err(e) => {
+                                    log::debug!("`Request` parse error: {e}");
+                                    continue;
                                 }
                             }
                         },
@@ -273,4 +280,23 @@ enum Command {
         Option<Vec<FiveTuple>>,
         mpsc::Sender<HashMap<FiveTuple, Info>>,
     ),
+}
+
+/// Indication whether an [`Error`] is fatal.
+///
+/// [`Error`]: std::error::Error
+trait FatalError {
+    /// Indicates whether this [`Error`] is fatal.
+    ///
+    /// [`Error`]: std::error::Error
+    fn is_fatal(&self) -> bool;
+}
+
+impl FatalError for transport::Error {
+    fn is_fatal(&self) -> bool {
+        match self {
+            Self::Io(_) | Self::TransportIsDead => true,
+            Self::ChannelData(_) | Self::Decode(_) => false,
+        }
+    }
 }
