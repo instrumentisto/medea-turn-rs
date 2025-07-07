@@ -162,7 +162,7 @@ pub(crate) use self::transport::Transport;
 pub use self::{
     allocation::{FiveTuple, Info as AllocationInfo},
     chandata::ChannelData,
-    server::{Config as ServerConfig, Server},
+    server::{Config as ServerConfig, Server, TurnConfig},
 };
 
 // TODO: Try remove once `bytecodec` is updated to new major version.
