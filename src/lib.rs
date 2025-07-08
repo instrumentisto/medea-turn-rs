@@ -162,7 +162,7 @@ pub(crate) use self::transport::Transport;
 pub use self::{
     allocation::{FiveTuple, Info as AllocationInfo},
     chandata::ChannelData,
-    server::{Config as ServerConfig, Server},
+    server::{Config as ServerConfig, Server, TurnConfig},
 };
 
 // TODO: Try remove once `bytecodec` is updated to new major version.
@@ -196,6 +196,25 @@ impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
         src_addr: SocketAddr,
     ) -> Result<SecretString, Error> {
         (**self).auth_handle(username, realm, src_addr)
+    }
+}
+
+/// [`AuthHandler`] always returning an [`Error`].
+///
+/// Can be used in type signatures when [TURN] is disabled.
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+#[derive(Clone, Copy, Debug)]
+pub struct NoneAuthHandler;
+
+impl AuthHandler for NoneAuthHandler {
+    fn auth_handle(
+        &self,
+        _: &str,
+        _: &str,
+        _: SocketAddr,
+    ) -> Result<SecretString, Error> {
+        Err(Error::NoSuchUser)
     }
 }
 

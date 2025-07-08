@@ -4,6 +4,7 @@
 //! [TURN]: https://en.wikipedia.org/wiki/TURN
 
 use std::{
+    borrow::Cow,
     collections::{HashMap, hash_map::Entry},
     net::SocketAddr,
     sync::Arc,
@@ -66,14 +67,15 @@ impl Transport for Server {
 
     async fn send_to(
         &self,
-        data: Vec<u8>,
+        data: Cow<'_, [u8]>,
         target: SocketAddr,
     ) -> Result<(), Error> {
         let mut writers = self.writers.lock().await;
         match writers.entry(target) {
             Entry::Occupied(mut e) => {
                 let (res_tx, res_rx) = oneshot::channel();
-                if e.get_mut().send((data, res_tx)).await.is_err() {
+                if e.get_mut().send((data.into_owned(), res_tx)).await.is_err()
+                {
                     // Underlying TCP stream is dead.
                     drop(e.remove_entry());
 

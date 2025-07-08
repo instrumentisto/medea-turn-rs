@@ -7,11 +7,10 @@ use std::{
     sync::Arc,
 };
 
-use bytecodec::EncodeExt as _;
 use rand::{Rng as _, distr::Alphanumeric};
 use secrecy::{ExposeSecret as _, SecretString};
 use stun_codec::{
-    Attribute as _, Message, MessageClass, MessageEncoder,
+    Attribute as _, Message, MessageClass,
     rfc5389::{
         errors::{BadRequest, StaleNonce, Unauthorized, UnknownAttribute},
         methods::BINDING,
@@ -30,8 +29,8 @@ use tokio::time::{Duration, Instant};
 #[cfg(doc)]
 use crate::allocation::Allocation;
 use crate::{
-    AuthHandler, Error,
-    allocation::{FiveTuple, Manager},
+    AuthHandler, Error, TurnConfig,
+    allocation::{FiveTuple, Manager, ManagerConfig},
     attr::{
         AddressFamily, Attribute, ChannelNumber, Data, DontFragment, ErrorCode,
         EvenPort, Fingerprint, Lifetime, MessageIntegrity, Nonce, PROTO_UDP,
@@ -41,7 +40,6 @@ use crate::{
     },
     chandata::ChannelData,
     server::DEFAULT_LIFETIME,
-    transport,
     transport::{Request, Transport},
 };
 
@@ -65,96 +63,92 @@ const NONCE_LIFETIME: Duration = Duration::from_secs(3600);
 /// See the [`Error`] for details.
 ///
 /// [1]: https://tools.ietf.org/html/rfc5389#section-7.3
-// TODO: Refactor to satisfy `clippy::too_many_arguments` lint.
-#[expect(clippy::too_many_arguments, reason = "needs refactoring")]
-pub(crate) async fn handle(
-    msg: Request,
+pub(crate) async fn handle<Auth: AuthHandler>(
+    req: Request,
     conn: &Arc<dyn Transport + Send + Sync>,
     five_tuple: FiveTuple,
-    server_realm: &str,
-    channel_bind_lifetime: Duration,
-    allocs: &mut Manager,
-    nonces: &mut HashMap<String, Instant>,
-    auth_handler: &(impl AuthHandler + Send + Sync),
+    turn: &mut Option<TurnCtx<Auth>>,
 ) -> Result<(), Error> {
-    match msg {
+    match req {
         Request::ChannelData(data) => {
-            handle_data_packet(data, five_tuple, allocs).await
+            if let Some(turn) = turn {
+                handle_data_packet(data, five_tuple, &turn.alloc).await
+            } else {
+                log::warn!(
+                    "Received a `ChannelData` message, but TURN is disabled",
+                );
+                Ok(())
+            }
         }
         Request::Message(msg) => {
             use stun_codec::MessageClass::{Indication, Request};
 
-            let auth = match (msg.method(), msg.class()) {
-                (
-                    ALLOCATE | REFRESH | CREATE_PERMISSION | CHANNEL_BIND,
-                    Request,
-                ) => {
-                    authenticate_request(
-                        &msg,
-                        auth_handler,
-                        conn,
-                        nonces,
-                        five_tuple,
-                        server_realm,
-                    )
-                    .await?
-                }
-                _ => None,
+            // This is the only STUN(rfc5389) message, it doesn't need TURN to
+            // be enabled.
+            if (msg.method(), msg.class()) == (BINDING, Request) {
+                return handle_binding_request(msg, conn, five_tuple).await;
+            }
+
+            let Some(turn) = turn else {
+                log::warn!("Received a TURN message, but TURN is disabled");
+                return Ok(());
+            };
+
+            // This is the only TURN request that does not need to be
+            // authenticated (it requires a previously authorized allocation)
+            if (msg.method(), msg.class()) == (SEND, Indication) {
+                return handle_send_indication(msg, &turn.alloc, five_tuple)
+                    .await;
+            }
+
+            // All other TURN messages must be authorized.
+            let Some(creds) =
+                authenticate_request(&msg, conn, five_tuple, turn).await?
+            else {
+                return Ok(());
             };
 
             match (msg.method(), msg.class()) {
                 (ALLOCATE, Request) => {
-                    if let Some((uname, realm, pass)) = auth {
-                        handle_allocate_request(
-                            msg, conn, allocs, five_tuple, uname, realm, pass,
-                        )
-                        .await
-                    } else {
-                        Ok(())
-                    }
+                    handle_allocate_request(
+                        msg,
+                        conn,
+                        &mut turn.alloc,
+                        five_tuple,
+                        creds,
+                    )
+                    .await
                 }
                 (REFRESH, Request) => {
-                    if let Some((uname, realm, pass)) = auth {
-                        handle_refresh_request(
-                            msg, conn, allocs, five_tuple, uname, realm, pass,
-                        )
-                        .await
-                    } else {
-                        Ok(())
-                    }
+                    handle_refresh_request(
+                        msg,
+                        conn,
+                        &mut turn.alloc,
+                        five_tuple,
+                        creds,
+                    )
+                    .await
                 }
                 (CREATE_PERMISSION, Request) => {
-                    if let Some((uname, realm, pass)) = auth {
-                        handle_create_permission_request(
-                            msg, conn, allocs, five_tuple, uname, realm, pass,
-                        )
-                        .await
-                    } else {
-                        Ok(())
-                    }
+                    handle_create_permission_request(
+                        msg,
+                        conn,
+                        &turn.alloc,
+                        five_tuple,
+                        creds,
+                    )
+                    .await
                 }
                 (CHANNEL_BIND, Request) => {
-                    if let Some((uname, realm, pass)) = auth {
-                        handle_channel_bind_request(
-                            msg,
-                            conn,
-                            allocs,
-                            five_tuple,
-                            channel_bind_lifetime,
-                            uname,
-                            realm,
-                            pass,
-                        )
-                        .await
-                    } else {
-                        Ok(())
-                    }
-                }
-                (BINDING, Request) => {
-                    handle_binding_request(msg, conn, five_tuple).await
-                }
-                (SEND, Indication) => {
-                    handle_send_indication(msg, allocs, five_tuple).await
+                    handle_channel_bind_request(
+                        msg,
+                        conn,
+                        &turn.alloc,
+                        five_tuple,
+                        turn.conf.channel_bind_lifetime,
+                        creds,
+                    )
+                    .await
                 }
                 (_, _) => Err(Error::UnexpectedClass),
             }
@@ -204,9 +198,7 @@ async fn handle_allocate_request(
     conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &mut Manager,
     five_tuple: FiveTuple,
-    uname: Username,
-    realm: Realm,
-    pass: SecretString,
+    creds: LongTermCredentials,
 ) -> Result<(), Error> {
     // 1. The server MUST require that the request be authenticated.  This
     //    authentication MUST be done using the long-term credential
@@ -222,7 +214,7 @@ async fn handle_allocate_request(
     //    (Allocation Mismatch) error.
     if allocs.get_alloc(&five_tuple).is_some() {
         respond_with_err(&msg, AllocationMismatch, conn, five_tuple.src_addr)
-            .await?;
+            .await;
 
         return Err(Error::RelayAlreadyAllocatedForFiveTuple);
     }
@@ -237,7 +229,7 @@ async fn handle_allocate_request(
         .get_attribute::<RequestedTransport>()
         .map(RequestedTransport::protocol)
     else {
-        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await?;
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
         return Err(Error::AttributeNotFound);
     };
@@ -249,7 +241,7 @@ async fn handle_allocate_request(
             conn,
             five_tuple.src_addr,
         )
-        .await?;
+        .await;
 
         return Err(Error::UnsupportedRelayProto);
     }
@@ -270,7 +262,7 @@ async fn handle_allocate_request(
             DontFragment.get_type(),
         ]));
 
-        send_to(msg, conn, five_tuple.src_addr).await?;
+        drop(conn.send_msg_to(msg, five_tuple.src_addr).await);
 
         return Err(Error::NoDontFragmentSupport);
     }
@@ -288,7 +280,7 @@ async fn handle_allocate_request(
     let even_port = msg.get_attribute::<EvenPort>();
 
     if has_reservation_token && even_port.is_some() {
-        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await?;
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
         return Err(Error::RequestWithReservationTokenAndEvenPort);
     }
@@ -314,7 +306,7 @@ async fn handle_allocate_request(
                 conn,
                 five_tuple.src_addr,
             )
-            .await?;
+            .await;
 
             return Err(Error::RequestWithReservationTokenAndReqAddressFamily);
         }
@@ -342,7 +334,7 @@ async fn handle_allocate_request(
                         conn,
                         five_tuple.src_addr,
                     )
-                    .await?;
+                    .await;
 
                     return Err(err);
                 }
@@ -370,7 +362,7 @@ async fn handle_allocate_request(
             Arc::clone(conn),
             requested_port,
             lifetime_duration,
-            uname.clone(),
+            creds.uname.clone(),
             use_ipv4,
         )
         .await
@@ -383,7 +375,7 @@ async fn handle_allocate_request(
                 conn,
                 five_tuple.src_addr,
             )
-            .await?;
+            .await;
 
             return Err(err);
         }
@@ -412,20 +404,50 @@ async fn handle_allocate_request(
                 .map_err(|e| Error::Encode(*e.kind()))?,
         );
         msg.add_attribute(XorMappedAddress::new(five_tuple.src_addr));
-
-        let integrity = MessageIntegrity::new_long_term_credential(
-            &msg,
-            &uname,
-            &realm,
-            pass.expose_secret(),
-        )
-        .map_err(|e| Error::Encode(*e.kind()))?;
-        msg.add_attribute(integrity);
+        msg.add_attribute(creds.integrity(&msg)?);
 
         msg
     };
 
-    send_to(msg, conn, five_tuple.src_addr).await
+    Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
+}
+
+/// [TURN] [Long-Term Credential][0].
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+/// [0]: https://datatracker.ietf.org/doc/html/rfc5389#section-10.2
+struct LongTermCredentials {
+    /// String used to describe the server or a context within the server.
+    ///
+    /// The realm tells the client which username and password combination to
+    /// use to authenticate requests.
+    realm: Realm,
+
+    /// [Long-Term Credential][0] username.
+    ///
+    /// [0]: https://datatracker.ietf.org/doc/html/rfc5389#section-10.2
+    uname: Username,
+
+    /// [Long-Term Credential][0] password.
+    ///
+    /// [0]: https://datatracker.ietf.org/doc/html/rfc5389#section-10.2
+    upass: SecretString,
+}
+
+impl LongTermCredentials {
+    /// Creates a [`MessageIntegrity`] for the provided [`Message`].
+    fn integrity(
+        &self,
+        msg: &Message<Attribute>,
+    ) -> Result<MessageIntegrity, Error> {
+        MessageIntegrity::new_long_term_credential(
+            msg,
+            &self.uname,
+            &self.realm,
+            self.upass.expose_secret(),
+        )
+        .map_err(|e| Error::Encode(*e.kind()))
+    }
 }
 
 /// Authenticates the provided [`Message`].
@@ -433,44 +455,43 @@ async fn handle_allocate_request(
 /// # Errors
 ///
 /// See the [`Error`] for details.
-async fn authenticate_request(
+async fn authenticate_request<Auth: AuthHandler>(
     msg: &Message<Attribute>,
-    auth_handler: &(impl AuthHandler + Send + Sync),
     conn: &Arc<dyn Transport + Send + Sync>,
-    nonces: &mut HashMap<String, Instant>,
     five_tuple: FiveTuple,
-    realm: &str,
-) -> Result<Option<(Username, Realm, SecretString)>, Error> {
+    turn_ctx: &mut TurnCtx<Auth>,
+) -> Result<Option<LongTermCredentials>, Error> {
     let Some(integrity) = msg.get_attribute::<MessageIntegrity>() else {
         respond_with_nonce(
             msg,
             ErrorCode::from(Unauthorized),
             conn,
-            realm,
+            &turn_ctx.conf.realm,
             five_tuple,
-            nonces,
+            &mut turn_ctx.nonces,
         )
         .await?;
         return Ok(None);
     };
 
     let Some(nonce_attr) = &msg.get_attribute::<Nonce>() else {
-        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await?;
+        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await;
         return Err(Error::AttributeNotFound);
     };
 
     let stale_nonce = {
         // Assert that the nonce exists and is not yet expired.
-        let stale_nonce =
-            nonces.get(nonce_attr.value()).is_none_or(|nonce_creation_time| {
+        let stale_nonce = turn_ctx.nonces.get(nonce_attr.value()).is_none_or(
+            |nonce_creation_time| {
                 Instant::now()
                     .checked_duration_since(*nonce_creation_time)
                     .unwrap_or_else(|| Duration::from_secs(0))
                     >= NONCE_LIFETIME
-            });
+            },
+        );
 
         if stale_nonce {
-            _ = nonces.remove(nonce_attr.value());
+            _ = turn_ctx.nonces.remove(nonce_attr.value());
         }
         stale_nonce
     };
@@ -480,29 +501,29 @@ async fn authenticate_request(
             msg,
             ErrorCode::from(StaleNonce),
             conn,
-            realm,
+            &turn_ctx.conf.realm,
             five_tuple,
-            nonces,
+            &mut turn_ctx.nonces,
         )
         .await?;
         return Ok(None);
     }
 
     let Some(uname_attr) = msg.get_attribute::<Username>() else {
-        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await?;
+        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await;
         return Err(Error::AttributeNotFound);
     };
     let Some(realm_attr) = msg.get_attribute::<Realm>() else {
-        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await?;
+        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await;
         return Err(Error::AttributeNotFound);
     };
 
-    let Ok(pass) = auth_handler.auth_handle(
+    let Ok(pass) = turn_ctx.conf.auth_handler.auth_handle(
         uname_attr.name(),
         realm_attr.text(),
         five_tuple.src_addr,
     ) else {
-        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await?;
+        respond_with_err(msg, BadRequest, conn, five_tuple.src_addr).await;
         return Err(Error::NoSuchUser);
     };
 
@@ -511,11 +532,14 @@ async fn authenticate_request(
         realm_attr,
         pass.expose_secret(),
     ) {
-        respond_with_err(msg, e, conn, five_tuple.src_addr).await?;
-
+        respond_with_err(msg, e, conn, five_tuple.src_addr).await;
         Err(Error::IntegrityMismatch)
     } else {
-        Ok(Some((uname_attr.clone(), realm_attr.clone(), pass)))
+        Ok(Some(LongTermCredentials {
+            uname: uname_attr.clone(),
+            realm: realm_attr.clone(),
+            upass: pass,
+        }))
     }
 }
 
@@ -542,7 +566,7 @@ async fn handle_binding_request(
         Fingerprint::new(&msg).map_err(|e| Error::Encode(*e.kind()))?;
     msg.add_attribute(fingerprint);
 
-    send_to(msg, conn, five_tuple.src_addr).await
+    Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
 }
 
 /// Handles the provided [`Message`] as a [Refresh Request][1].
@@ -557,9 +581,7 @@ async fn handle_refresh_request(
     conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &mut Manager,
     five_tuple: FiveTuple,
-    uname: Username,
-    realm: Realm,
-    pass: SecretString,
+    creds: LongTermCredentials,
 ) -> Result<(), Error> {
     log::trace!("Received `RefreshRequest` from {}", five_tuple.src_addr);
 
@@ -586,7 +608,7 @@ async fn handle_refresh_request(
                     conn,
                     five_tuple.src_addr,
                 )
-                .await?;
+                .await;
 
                 return Err(Error::PeerAddressFamilyMismatch);
             }
@@ -605,16 +627,9 @@ async fn handle_refresh_request(
         Lifetime::new(lifetime_duration)
             .map_err(|e| Error::Encode(*e.kind()))?,
     );
-    let integrity = MessageIntegrity::new_long_term_credential(
-        &msg,
-        &uname,
-        &realm,
-        pass.expose_secret(),
-    )
-    .map_err(|e| Error::Encode(*e.kind()))?;
-    msg.add_attribute(integrity);
+    msg.add_attribute(creds.integrity(&msg)?);
 
-    send_to(msg, conn, five_tuple.src_addr).await
+    Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
 }
 
 /// Handles the provided [`Message`] as a [CreatePermission Request][1].
@@ -629,9 +644,7 @@ async fn handle_create_permission_request(
     conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &Manager,
     five_tuple: FiveTuple,
-    uname: Username,
-    realm: Realm,
-    pass: SecretString,
+    creds: LongTermCredentials,
 ) -> Result<(), Error> {
     log::trace!("Received `CreatePermission` from {}", five_tuple.src_addr);
 
@@ -660,7 +673,7 @@ async fn handle_create_permission_request(
                 conn,
                 five_tuple.src_addr,
             )
-            .await?;
+            .await;
 
             return Err(Error::PeerAddressFamilyMismatch);
         }
@@ -677,22 +690,11 @@ async fn handle_create_permission_request(
         MessageClass::ErrorResponse
     };
 
-    let msg = {
-        let mut msg =
-            Message::new(resp_class, CREATE_PERMISSION, msg.transaction_id());
-        let integrity = MessageIntegrity::new_long_term_credential(
-            &msg,
-            &uname,
-            &realm,
-            pass.expose_secret(),
-        )
-        .map_err(|e| Error::Encode(*e.kind()))?;
-        msg.add_attribute(integrity);
+    let mut msg =
+        Message::new(resp_class, CREATE_PERMISSION, msg.transaction_id());
+    msg.add_attribute(creds.integrity(&msg)?);
 
-        msg
-    };
-
-    send_to(msg, conn, five_tuple.src_addr).await
+    Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
 }
 
 /// Handles the provided [`Message`] as a [Send Indication][1].
@@ -734,32 +736,26 @@ async fn handle_send_indication(
 /// See the [`Error`] for details.
 ///
 /// [1]: https://tools.ietf.org/html/rfc5766#section-11.2
-// TODO: Refactor to satisfy `clippy::too_many_arguments` lint.
-#[expect(clippy::too_many_arguments, reason = "needs refactoring")]
 async fn handle_channel_bind_request(
     msg: Message<Attribute>,
     conn: &Arc<dyn Transport + Send + Sync>,
     allocs: &Manager,
     five_tuple: FiveTuple,
     channel_bind_lifetime: Duration,
-    uname: Username,
-    realm: Realm,
-    pass: SecretString,
+    creds: LongTermCredentials,
 ) -> Result<(), Error> {
     if let Some(alloc) = allocs.get_alloc(&five_tuple) {
         let Some(ch_num) =
             msg.get_attribute::<ChannelNumber>().map(|a| a.value())
         else {
-            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr)
-                .await?;
+            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
             return Err(Error::AttributeNotFound);
         };
         let Some(peer_addr) =
             msg.get_attribute::<XorPeerAddress>().map(XorPeerAddress::address)
         else {
-            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr)
-                .await?;
+            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
             return Err(Error::AttributeNotFound);
         };
@@ -777,7 +773,7 @@ async fn handle_channel_bind_request(
                 conn,
                 five_tuple.src_addr,
             )
-            .await?;
+            .await;
 
             return Err(Error::PeerAddressFamilyMismatch);
         }
@@ -788,8 +784,7 @@ async fn handle_channel_bind_request(
             .add_channel_bind(ch_num, peer_addr, channel_bind_lifetime)
             .await
         {
-            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr)
-                .await?;
+            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
             return Err(e);
         }
 
@@ -798,17 +793,9 @@ async fn handle_channel_bind_request(
             CHANNEL_BIND,
             msg.transaction_id(),
         );
+        msg.add_attribute(creds.integrity(&msg)?);
 
-        let integrity = MessageIntegrity::new_long_term_credential(
-            &msg,
-            &uname,
-            &realm,
-            pass.expose_secret(),
-        )
-        .map_err(|e| Error::Encode(*e.kind()))?;
-        msg.add_attribute(integrity);
-
-        send_to(msg, conn, five_tuple.src_addr).await
+        Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
     } else {
         Err(Error::NoAllocationFound)
     }
@@ -847,28 +834,7 @@ async fn respond_with_nonce(
         Realm::new(realm.to_owned()).map_err(|e| Error::Encode(*e.kind()))?,
     );
 
-    send_to(msg, conn, five_tuple.src_addr).await
-}
-
-/// Encodes and sends the provided [`Message`] to the provided [`SocketAddr`]
-/// via the provided [`Transport`].
-///
-/// # Errors
-///
-/// See the [`Error`] for details.
-async fn send_to(
-    msg: Message<Attribute>,
-    conn: &Arc<dyn Transport + Send + Sync>,
-    dst: SocketAddr,
-) -> Result<(), Error> {
-    let bytes = MessageEncoder::new()
-        .encode_into_bytes(msg)
-        .map_err(|e| Error::Encode(*e.kind()))?;
-
-    match conn.send_to(bytes, dst).await {
-        Ok(()) | Err(transport::Error::TransportIsDead) => Ok(()),
-        Err(err) => Err(Error::from(err)),
-    }
+    Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
 }
 
 /// Sends a [`MessageClass::ErrorResponse`] to the client and returns the
@@ -882,7 +848,7 @@ async fn respond_with_err(
     err: impl Into<ErrorCode>,
     conn: &Arc<dyn Transport + Send + Sync>,
     dst: SocketAddr,
-) -> Result<(), Error> {
+) {
     let mut err_msg = Message::new(
         MessageClass::ErrorResponse,
         req.method(),
@@ -890,9 +856,7 @@ async fn respond_with_err(
     );
     err_msg.add_attribute(err.into());
 
-    send_to(err_msg, conn, dst).await?;
-
-    Ok(())
+    drop(conn.send_msg_to(err_msg, dst).await);
 }
 
 /// Calculates a [`Lifetime`], fetching it from the provided [`Message`] and
@@ -909,6 +873,46 @@ fn get_lifetime(m: &Message<Attribute>) -> Duration {
             }
         },
     )
+}
+
+/// [TURN] server context.
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+pub(crate) struct TurnCtx<Auth> {
+    /// [TURN] server configuration provided via external API.
+    ///
+    /// [TURN]: https://en.wikipedia.org/wiki/TURN
+    pub conf: TurnConfig<Auth>,
+
+    /// [Allocation] [`Manager`].
+    ///
+    /// [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+    pub alloc: Manager,
+
+    /// [Nonce]s storage.
+    ///
+    /// [Nonce] is a string chosen at random by the server and included in the
+    /// message-digest for preventing reply attacks.
+    ///
+    /// [Nonce]: https://en.wikipedia.org/wiki/Cryptographic_nonce
+    pub nonces: HashMap<String, Instant>,
+}
+
+impl<A> From<TurnConfig<A>> for TurnCtx<A> {
+    fn from(mut conf: TurnConfig<A>) -> Self {
+        if conf.channel_bind_lifetime == Duration::from_secs(0) {
+            conf.channel_bind_lifetime = DEFAULT_LIFETIME;
+        }
+
+        Self {
+            alloc: Manager::new(ManagerConfig {
+                relay_addr_generator: conf.relay_addr_generator.clone(),
+                alloc_close_notify: conf.alloc_close_notify.clone(),
+            }),
+            conf,
+            nonces: HashMap::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -987,11 +991,12 @@ mod handle_spec {
         time::{Duration, Instant},
     };
 
-    use super::handle;
+    use super::{TurnCtx, handle};
     use crate::{
-        AuthHandler, Error, FiveTuple, Transport, allocation,
+        AuthHandler, Error, FiveTuple, Transport, TurnConfig, allocation,
         attr::{Attribute, Lifetime, MessageIntegrity, Nonce, Realm, Username},
         relay,
+        relay::Allocator,
         transport::Request,
     };
 
@@ -1070,21 +1075,27 @@ mod handle_spec {
         .unwrap();
         m.add_attribute(integrity);
 
-        let auth: Arc<dyn AuthHandler + Send + Sync> =
-            Arc::new(TestAuthHandler {});
-        handle(
-            Request::Message(m),
-            &conn,
-            five_tuple,
-            STATIC_KEY,
-            Duration::from_secs(60),
-            &mut allocation_manager,
-            &mut nonces,
-            &auth,
-        )
-        .await
-        .unwrap();
+        let mut turn = Some(TurnCtx {
+            conf: TurnConfig {
+                relay_addr_generator: Allocator {
+                    relay_address: IpAddr::from([127, 0, 0, 1]),
+                    min_port: 0,
+                    max_port: 0,
+                    max_retries: 0,
+                    address: "".to_string(),
+                },
+                realm: STATIC_KEY.to_owned(),
+                auth_handler: Arc::new(TestAuthHandler {}),
+                channel_bind_lifetime: Duration::from_secs(60),
+                alloc_close_notify: None,
+            },
+            alloc: allocation_manager,
+            nonces,
+        });
+        handle(Request::Message(m), &conn, five_tuple, &mut turn)
+            .await
+            .unwrap();
 
-        assert!(allocation_manager.get_alloc(&five_tuple).is_none());
+        assert!(turn.unwrap().alloc.get_alloc(&five_tuple).is_none());
     }
 }

@@ -23,8 +23,9 @@ use tokio::{
 use crate::allocation::Allocation;
 use crate::{
     AuthHandler, Error,
-    allocation::{FiveTuple, Info, Manager, ManagerConfig},
+    allocation::{FiveTuple, Info},
     relay,
+    server::request::TurnCtx,
     transport::{self, Transport},
 };
 
@@ -41,7 +42,7 @@ pub(crate) const INBOUND_MTU: usize = 1500;
 
 /// Configuration of a [`Server`].
 #[derive(Debug)]
-pub struct Config<A> {
+pub struct Config<Auth> {
     /// List of all [STUN]/[TURN] connections listeners.
     ///
     /// Each listener may have a custom behavior around the creation of
@@ -54,6 +55,22 @@ pub struct Config<A> {
         .collect::<Vec<_>>())]
     pub connections: Vec<Arc<dyn Transport + Send + Sync>>,
 
+    /// Optional [TURN] server configuration.
+    ///
+    /// Enables [TURN] support on the provided [`Transport`]s, otherwise only
+    /// [STUN] ([RFC 5389]) will be enabled.
+    ///
+    /// [TURN]: https://en.wikipedia.org/wiki/TURN
+    /// [STUN]: https://en.wikipedia.org/wiki/STUN
+    /// [RFC 5389]: https://tools.ietf.org/html/rfc5389
+    pub turn: Option<TurnConfig<Auth>>,
+}
+
+/// [TURN] server configuration.
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+#[derive(Debug)]
+pub struct TurnConfig<Auth> {
     /// [`Allocator`] of [`relay`] connections.
     ///
     /// [`Allocator`]: relay::Allocator
@@ -70,7 +87,7 @@ pub struct Config<A> {
 
     /// Callback for handling incoming authentication requests, allowing users
     /// to customize it with custom behavior.
-    pub auth_handler: Arc<A>,
+    pub auth_handler: Arc<Auth>,
 
     /// Lifetime of a [channel bindings][1].
     ///
@@ -82,6 +99,20 @@ pub struct Config<A> {
     ///
     /// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
     pub alloc_close_notify: Option<mpsc::Sender<Info>>,
+}
+
+// Manual implementation is provided to omit redundant `Auth: Clone` trait bound
+// imposed by the standard derive macro.
+impl<Auth> Clone for TurnConfig<Auth> {
+    fn clone(&self) -> Self {
+        Self {
+            relay_addr_generator: self.relay_addr_generator.clone(),
+            realm: self.realm.clone(),
+            auth_handler: Arc::clone(&self.auth_handler),
+            channel_bind_lifetime: self.channel_bind_lifetime,
+            alloc_close_notify: self.alloc_close_notify.clone(),
+        }
+    }
 }
 
 /// Instance of a [STUN]/[TURN] server.
@@ -106,22 +137,11 @@ impl Server {
     {
         let (command_tx, _) = broadcast::channel(16);
         let this = Self { command_tx: command_tx.clone() };
-        let channel_bind_lifetime =
-            if config.channel_bind_lifetime == Duration::from_secs(0) {
-                DEFAULT_LIFETIME
-            } else {
-                config.channel_bind_lifetime
-            };
 
         for conn in config.connections {
-            let auth_handler = Arc::clone(&config.auth_handler);
-            let realm = config.realm.clone();
-            let mut nonces = HashMap::new();
+            let mut turn = config.turn.clone().map(TurnCtx::from);
+
             let mut handle_rx = command_tx.subscribe();
-            let mut allocation_manager = Manager::new(ManagerConfig {
-                relay_addr_generator: config.relay_addr_generator.clone(),
-                alloc_close_notify: config.alloc_close_notify.clone(),
-            });
 
             let (mut close_tx, mut close_rx) = oneshot::channel::<()>();
             drop(tokio::spawn(async move {
@@ -136,19 +156,24 @@ impl Server {
                                     name,
                                     completion,
                                 )) => {
-                                    allocation_manager
-                                        .delete_allocations_by_username(
-                                            &name,
-                                        );
+                                    let Some(turn) = &mut turn else {
+                                        continue;
+                                    };
+                                    turn.alloc
+                                        .delete_allocations_by_username(&name);
                                     drop(completion);
                                 }
                                 Ok(Command::GetAllocationsInfo(
                                     five_tuples,
                                     tx,
                                 )) => {
-                                    let infos = allocation_manager
-                                        .get_allocations_info(
-                                            five_tuples.as_ref(),
+                                    let Some(turn) = &mut turn else {
+                                        drop(tx.send(HashMap::new()));
+                                        continue;
+                                    };
+                                    let infos =
+                                        turn.alloc.get_allocations_info(
+                                            five_tuples.as_ref()
                                         );
                                     drop(tx.send(infos).await);
                                 }
@@ -191,11 +216,7 @@ impl Server {
                             dst_addr: local_con_addr,
                             protocol,
                         },
-                        &realm,
-                        channel_bind_lifetime,
-                        &mut allocation_manager,
-                        &mut nonces,
-                        &auth_handler,
+                        &mut turn,
                     );
                     if let Err(e) = handle.await {
                         log::warn!("Error when handling `Request`: {e}");
@@ -296,7 +317,7 @@ impl FatalError for transport::Error {
     fn is_fatal(&self) -> bool {
         match self {
             Self::Io(_) | Self::TransportIsDead => true,
-            Self::ChannelData(_) | Self::Decode(_) => false,
+            Self::ChannelData(_) | Self::Decode(_) | Self::Encode(_) => false,
         }
     }
 }

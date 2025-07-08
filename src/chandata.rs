@@ -20,11 +20,6 @@ const NUMBER_SIZE: usize = 2;
 /// [Length]: https://tools.ietf.org/html/rfc5766#section-11.4
 const LENGTH_SIZE: usize = 2;
 
-/// [ChannelData Message][1] header size.
-///
-/// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
-const HEADER_SIZE: usize = LENGTH_SIZE + NUMBER_SIZE;
-
 /// Representation of [TURN ChannelData Message][1] defined in [RFC 5766].
 ///
 /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
@@ -41,13 +36,18 @@ pub struct ChannelData {
 }
 
 impl ChannelData {
+    /// [ChannelData Message][1] header size.
+    ///
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
+    pub const HEADER_SIZE: usize = LENGTH_SIZE + NUMBER_SIZE;
+
     /// Checks whether the provided `data` represents a [`ChannelData`] message.
     #[expect( // false positive
         clippy::missing_asserts_for_indexing,
         reason = "length is checked with the first `if` expression",
     )]
     pub(crate) fn is_channel_data(data: &[u8]) -> bool {
-        if data.len() < HEADER_SIZE {
+        if data.len() < Self::HEADER_SIZE {
             return false;
         }
         let len = usize::from(u16::from_be_bytes([
@@ -55,7 +55,7 @@ impl ChannelData {
             data[NUMBER_SIZE + 1],
         ]));
 
-        if len > data[HEADER_SIZE..].len() {
+        if len > data[Self::HEADER_SIZE..].len() {
             return false;
         }
 
@@ -68,7 +68,7 @@ impl ChannelData {
     ///
     /// See the [`FormatError`] for details.
     pub(crate) fn decode(mut raw: Vec<u8>) -> Result<Self, FormatError> {
-        if raw.len() < HEADER_SIZE {
+        if raw.len() < Self::HEADER_SIZE {
             return Err(FormatError::BadChannelDataLength);
         }
 
@@ -82,12 +82,12 @@ impl ChannelData {
             raw[NUMBER_SIZE + 1],
         ]));
 
-        if l > raw[HEADER_SIZE..].len() {
+        if l > raw[Self::HEADER_SIZE..].len() {
             return Err(FormatError::BadChannelDataLength);
         }
 
         // Discard header and padding.
-        drop(raw.drain(0..HEADER_SIZE));
+        drop(raw.drain(0..Self::HEADER_SIZE));
         if l != raw.len() {
             raw.truncate(l);
         }
@@ -107,28 +107,39 @@ impl ChannelData {
         self.number
     }
 
-    /// Encodes the provided `payload` and [Channel Number][1] as
-    /// [`ChannelData`] message bytes.
+    /// Encodes the provided `buf` and [Channel Number][1] as [`ChannelData`]
+    /// message bytes.
+    ///
+    /// Modifies the provided buffer in place returning the encoded message's
+    /// length.
+    ///
+    /// Also modifies first [`Self::HEADER_SIZE`] bytes of the provided buffer
+    /// with [`ChannelData`] header, so the payload must start right after.
+    ///
+    /// Pads the message, so the provided `buf` must be big enough:
+    /// [`Self::HEADER_SIZE`]` + payload + padding (3 bytes max)`.
     ///
     /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     pub(crate) fn encode(
-        payload: &[u8],
+        buf: &mut [u8],
+        payload_n: usize,
         chan_num: u16,
-    ) -> Result<Vec<u8>, FormatError> {
-        let length = HEADER_SIZE + payload.len();
+    ) -> Result<usize, FormatError> {
+        let length = Self::HEADER_SIZE + payload_n;
         let padded_length = nearest_padded_value_length(length);
+        if buf.len() < padded_length {
+            return Err(FormatError::BufferTooShort);
+        }
 
         #[expect(clippy::map_err_ignore, reason = "useless")]
-        let len = u16::try_from(payload.len())
+        let len = u16::try_from(payload_n)
             .map_err(|_| FormatError::BadChannelDataLength)?;
 
-        let mut encoded = vec![0u8; padded_length];
+        buf[..NUMBER_SIZE].copy_from_slice(&chan_num.to_be_bytes());
+        buf[NUMBER_SIZE..Self::HEADER_SIZE].copy_from_slice(&len.to_be_bytes());
+        buf[length..padded_length].fill(0);
 
-        encoded[..NUMBER_SIZE].copy_from_slice(&chan_num.to_be_bytes());
-        encoded[NUMBER_SIZE..HEADER_SIZE].copy_from_slice(&len.to_be_bytes());
-        encoded[HEADER_SIZE..length].copy_from_slice(payload);
-
-        Ok(encoded)
+        Ok(padded_length)
     }
 }
 
@@ -153,6 +164,10 @@ pub enum FormatError {
     /// Incorrect message length.
     #[display("Invalid `ChannelData` length")]
     BadChannelDataLength,
+
+    /// Provided buffer is too short.
+    #[display("Provided buffer cannot fit encoded message")]
+    BufferTooShort,
 }
 
 #[cfg(test)]
@@ -162,12 +177,14 @@ mod spec {
 
     #[test]
     fn encodes() {
-        let encoded =
-            ChannelData::encode(&[1, 2, 3, 4], ChannelNumber::MIN + 1).unwrap();
-        let decoded = ChannelData::decode(encoded.clone()).unwrap();
+        let mut buf = [0, 0, 0, 0, 1, 2, 3, 4];
+        let encoded_n =
+            ChannelData::encode(&mut buf, 4, ChannelNumber::MIN + 1).unwrap();
+        assert_eq!(encoded_n, 8);
+        let decoded = ChannelData::decode(buf.to_vec()).unwrap();
 
         assert!(
-            ChannelData::is_channel_data(&encoded),
+            ChannelData::is_channel_data(&buf[..encoded_n]),
             "wrong `is_channel_data`",
         );
         assert_eq!(vec![1, 2, 3, 4], decoded.data, "wrong decoded data");
@@ -210,8 +227,23 @@ mod spec {
         ];
 
         for (name, a, b, r) in tests {
-            let v = ChannelData::encode(&a.data, a.number)
-                == ChannelData::encode(&b.data, b.number);
+            let mut a_buf = vec![0; 100];
+            a_buf[ChannelData::HEADER_SIZE
+                ..ChannelData::HEADER_SIZE + a.data.len()]
+                .copy_from_slice(&a.data);
+            let a_enc_len =
+                ChannelData::encode(a_buf.as_mut(), a.data.len(), a.number)
+                    .unwrap();
+
+            let mut b_buf = vec![0; 100];
+            b_buf[ChannelData::HEADER_SIZE
+                ..ChannelData::HEADER_SIZE + b.data.len()]
+                .copy_from_slice(&b.data);
+            let b_enc_len =
+                ChannelData::encode(b_buf.as_mut(), b.data.len(), b.number)
+                    .unwrap();
+
+            let v = a_buf[..a_enc_len] == b_buf[..b_enc_len];
 
             assert_eq!(v, r, "wrong equality of {name}");
         }
@@ -300,8 +332,19 @@ mod spec {
         for packet in data {
             let m = ChannelData::decode(packet.clone()).unwrap();
 
-            let encoded = ChannelData::encode(&m.data, m.number).unwrap();
-            let decoded = ChannelData::decode(encoded.clone()).unwrap();
+            let mut buf = m.data.clone();
+            let payload_size = m.data.len();
+            // Reserve for header and padding.
+            buf.splice(
+                0..0,
+                std::iter::repeat(0u8).take(ChannelData::HEADER_SIZE),
+            );
+            buf.resize(buf.len() + 3, 0);
+
+            let encoded_len =
+                ChannelData::encode(&mut buf, payload_size, m.number).unwrap();
+            let decoded =
+                ChannelData::decode(buf[..encoded_len].to_vec()).unwrap();
 
             assert_eq!(m.data, decoded.data, "wrong payload");
             assert_eq!(m.number, decoded.number, "wrong number");

@@ -5,12 +5,12 @@
 
 mod tcp;
 
-use std::{io, net::SocketAddr};
+use std::{borrow::Cow, io, net::SocketAddr};
 
 use async_trait::async_trait;
-use bytecodec::DecodeExt as _;
+use bytecodec::{DecodeExt as _, EncodeExt as _};
 use derive_more::with_trait::{Display, Error as StdError, From};
-use stun_codec::{Message, MessageDecoder};
+use stun_codec::{Message, MessageDecoder, MessageEncoder};
 pub use tokio::net::UdpSocket;
 use tokio::net::{self, ToSocketAddrs};
 
@@ -59,9 +59,27 @@ pub trait Transport {
     /// See the [`Error`] for details.
     async fn send_to(
         &self,
-        data: Vec<u8>,
+        data: Cow<'_, [u8]>,
         target: SocketAddr,
     ) -> Result<(), Error>;
+
+    /// Encodes and sends the provided [`Message`] to the provided
+    /// [`SocketAddr`] via the provided [`Transport`].
+    ///
+    /// # Errors
+    ///
+    /// See the [`Error`] for details.
+    async fn send_msg_to(
+        &self,
+        msg: Message<Attribute>,
+        dst: SocketAddr,
+    ) -> Result<(), Error> {
+        let bytes = MessageEncoder::new()
+            .encode_into_bytes(msg)
+            .map_err(|e| Error::Encode(*e.kind()))?;
+
+        self.send_to(Cow::Owned(bytes), dst).await
+    }
 
     /// Returns the local [`SocketAddr`] of this [`Transport`].
     fn local_addr(&self) -> SocketAddr;
@@ -97,7 +115,7 @@ impl Transport for UdpSocket {
 
     async fn send_to(
         &self,
-        data: Vec<u8>,
+        data: Cow<'_, [u8]>,
         target: SocketAddr,
     ) -> Result<(), Error> {
         Ok(self.send_to(&data, target).await.map(|_| ())?)
@@ -150,6 +168,11 @@ pub enum Error {
     /// Tried to use a dead [`Transport`].
     #[display("Underlying TCP/UDP transport is dead")]
     TransportIsDead,
+
+    /// Failed to encode a [`Message`].
+    #[display("Failed to encode STUN/TURN message: {_0:?}")]
+    #[from(ignore)]
+    Encode(#[error(not(source))] bytecodec::ErrorKind),
 
     /// Failed to decode message.
     #[display("Failed to decode STUN/TURN message: {_0:?}")]

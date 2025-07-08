@@ -7,6 +7,7 @@ mod manager;
 mod permission;
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     marker::{Send, Sync},
     mem,
@@ -17,12 +18,10 @@ use std::{
     },
 };
 
-use bytecodec::EncodeExt as _;
 use derive_more::with_trait::Display;
 use rand::random;
 use stun_codec::{
-    Message, MessageClass, MessageEncoder, TransactionId,
-    rfc5766::methods::DATA,
+    Message, MessageClass, TransactionId, rfc5766::methods::DATA,
 };
 use tokio::{
     net::UdpSocket,
@@ -361,13 +360,15 @@ impl Allocation {
 
             let expired = sleep(lifetime);
             tokio::pin!(expired);
-            let mut buffer = vec![0u8; INBOUND_MTU];
+            let mut buf = vec![0u8; INBOUND_MTU];
 
             loop {
-                let (data, src_addr) = tokio::select! {
-                    result = relay_socket.recv_from(&mut buffer) => {
+                let (recv_len, src_addr) = tokio::select! {
+                    result = relay_socket.recv_from(
+                        &mut buf[ChannelData::HEADER_SIZE..],
+                    ) => {
                         if let Ok((n, src_addr)) = result {
-                            (&buffer[..n], src_addr)
+                            (n, src_addr)
                         } else {
                             break;
                         }
@@ -399,18 +400,22 @@ impl Allocation {
                     .map(|(cn, _)| *cn);
 
                 if let Some(number) = cb_number {
-                    match ChannelData::encode(data, number) {
-                        Ok(data) => {
+                    match ChannelData::encode(&mut buf, recv_len, number) {
+                        Ok(n) => {
                             if let Err(e) = turn_socket
-                                .send_to(data, five_tuple.src_addr)
+                                .send_to(
+                                    Cow::Borrowed(&buf[..n]),
+                                    five_tuple.src_addr,
+                                )
                                 .await
                             {
                                 match e {
                                     transport::Error::TransportIsDead => {
                                         break;
                                     }
-                                    transport::Error::Decode(..)
-                                    | transport::Error::ChannelData(..)
+                                    transport::Error::ChannelData(..)
+                                    | transport::Error::Decode(..)
+                                    | transport::Error::Encode(..)
                                     | transport::Error::Io(..) => {
                                         log::warn!(
                                             "Failed to send `ChannelData` from \
@@ -443,29 +448,24 @@ impl Allocation {
                             TransactionId::new(random()),
                         );
                         msg.add_attribute(XorPeerAddress::new(src_addr));
-                        let Ok(data) = Data::new(data.to_vec()) else {
+
+                        let data = buf[ChannelData::HEADER_SIZE
+                            ..recv_len + ChannelData::HEADER_SIZE]
+                            .to_vec();
+                        let Ok(data) = Data::new(data) else {
                             log::error!("`DataIndication` is too long");
                             continue;
                         };
                         msg.add_attribute(data);
 
-                        match MessageEncoder::new().encode_into_bytes(msg) {
-                            Ok(encoded) => {
-                                if let Err(e) = turn_socket
-                                    .send_to(encoded, five_tuple.src_addr)
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to send `DataIndication` from \
-                                         `Allocation(src: {src_addr})`: {e}",
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "`DataIndication` encoding failed: {e}",
-                                );
-                            }
+                        if let Err(e) = turn_socket
+                            .send_msg_to(msg, five_tuple.src_addr)
+                            .await
+                        {
+                            log::error!(
+                                "Failed to send `DataIndication` from \
+                                 `Allocation(src: {src_addr})`: {e}",
+                            );
                         }
                     } else {
                         log::info!(
@@ -475,6 +475,7 @@ impl Allocation {
                     }
                 }
             }
+
             drop(mem::take(&mut *channel_bindings.lock().await));
             drop(mem::take(&mut *permissions.lock().await));
 
