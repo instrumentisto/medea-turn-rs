@@ -199,11 +199,12 @@ impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
     }
 }
 
-/// [`AuthHandler`] that always returns error. Can be used in type signatures
-/// when [TURN] is disabled.
+/// [`AuthHandler`] always returning an [`Error`].
+///
+/// Can be used in type signatures when [TURN] is disabled.
 ///
 /// [TURN]: https://en.wikipedia.org/wiki/TURN
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct NoneAuthHandler;
 
 impl AuthHandler for NoneAuthHandler {

@@ -107,15 +107,17 @@ impl ChannelData {
         self.number
     }
 
-    /// Encodes the provided `buf` and [Channel Number][1] as
-    /// [`ChannelData`] message bytes. Modifies the provided
-    /// buffer in place returning encoded message length.
+    /// Encodes the provided `buf` and [Channel Number][1] as [`ChannelData`]
+    /// message bytes.
     ///
-    /// It modifies first [`Self::HEADER_SIZE`] bytes of the provided
-    /// buffer with [`ChannelData`] header, so payload must start right after.
+    /// Modifies the provided buffer in place returning the encoded message's
+    /// length.
     ///
-    /// Will pad message, so the provided `buf` must be big enough:
-    /// [`Self::HEADER_SIZE`] + payload + padding (3 bytes max).
+    /// Also modifies first [`Self::HEADER_SIZE`] bytes of the provided buffer
+    /// with [`ChannelData`] header, so the payload must start right after.
+    ///
+    /// Pads the message, so the provided `buf` must be big enough:
+    /// [`Self::HEADER_SIZE`]` + payload + padding (3 bytes max)`.
     ///
     /// [1]: https://tools.ietf.org/html/rfc5766#section-11.4
     pub(crate) fn encode(
@@ -125,7 +127,6 @@ impl ChannelData {
     ) -> Result<usize, FormatError> {
         let length = Self::HEADER_SIZE + payload_n;
         let padded_length = nearest_padded_value_length(length);
-
         if buf.len() < padded_length {
             return Err(FormatError::BufferTooShort);
         }
@@ -164,7 +165,7 @@ pub enum FormatError {
     #[display("Invalid `ChannelData` length")]
     BadChannelDataLength,
 
-    /// The provided buffer is too short.
+    /// Provided buffer is too short.
     #[display("Provided buffer cannot fit encoded message")]
     BufferTooShort,
 }
@@ -230,15 +231,14 @@ mod spec {
             a_buf[ChannelData::HEADER_SIZE
                 ..ChannelData::HEADER_SIZE + a.data.len()]
                 .copy_from_slice(&a.data);
+            let a_enc_len =
+                ChannelData::encode(a_buf.as_mut(), a.data.len(), a.number)
+                    .unwrap();
 
             let mut b_buf = vec![0; 100];
             b_buf[ChannelData::HEADER_SIZE
                 ..ChannelData::HEADER_SIZE + b.data.len()]
                 .copy_from_slice(&b.data);
-
-            let a_enc_len =
-                ChannelData::encode(a_buf.as_mut(), a.data.len(), a.number)
-                    .unwrap();
             let b_enc_len =
                 ChannelData::encode(b_buf.as_mut(), b.data.len(), b.number)
                     .unwrap();
@@ -334,7 +334,7 @@ mod spec {
 
             let mut buf = m.data.clone();
             let payload_size = m.data.len();
-            // reserve for header and padding
+            // Reserve for header and padding.
             buf.splice(
                 0..0,
                 std::iter::repeat(0u8).take(ChannelData::HEADER_SIZE),

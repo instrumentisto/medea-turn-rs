@@ -75,7 +75,7 @@ pub(crate) async fn handle<Auth: AuthHandler>(
                 handle_data_packet(data, five_tuple, &turn.alloc).await
             } else {
                 log::warn!(
-                    "Received a ChannelData message, but TURN is disabled"
+                    "Received a `ChannelData` message, but TURN is disabled",
                 );
                 Ok(())
             }
@@ -83,14 +83,13 @@ pub(crate) async fn handle<Auth: AuthHandler>(
         Request::Message(msg) => {
             use stun_codec::MessageClass::{Indication, Request};
 
-            // This is the only STUN(rfc5389) message, it does not need TURN to
+            // This is the only STUN(rfc5389) message, it doesn't need TURN to
             // be enabled.
             if (msg.method(), msg.class()) == (BINDING, Request) {
                 return handle_binding_request(msg, conn, five_tuple).await;
             }
 
             let Some(turn) = turn else {
-                // This is a TURN message but TURN is disabled.
                 log::warn!("Received a TURN message, but TURN is disabled");
                 return Ok(());
             };
@@ -102,7 +101,7 @@ pub(crate) async fn handle<Auth: AuthHandler>(
                     .await;
             }
 
-            // All other TURN messages must be authorized
+            // All other TURN messages must be authorized.
             let Some(creds) =
                 authenticate_request(&msg, conn, five_tuple, turn).await?
             else {
@@ -418,7 +417,8 @@ async fn handle_allocate_request(
 /// [TURN]: https://en.wikipedia.org/wiki/TURN
 /// [0]: https://datatracker.ietf.org/doc/html/rfc5389#section-10.2
 struct LongTermCredentials {
-    /// A string used to describe the server or a context within the server.
+    /// String used to describe the server or a context within the server.
+    ///
     /// The realm tells the client which username and password combination to
     /// use to authenticate requests.
     realm: Realm,
@@ -435,7 +435,7 @@ struct LongTermCredentials {
 }
 
 impl LongTermCredentials {
-    /// Creates a [`MessageIntegrity`] for the given [`Message`].
+    /// Creates a [`MessageIntegrity`] for the provided [`Message`].
     fn integrity(
         &self,
         msg: &Message<Attribute>,
@@ -875,6 +875,46 @@ fn get_lifetime(m: &Message<Attribute>) -> Duration {
     )
 }
 
+/// [TURN] server context.
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+pub(crate) struct TurnCtx<Auth> {
+    /// [TURN] server configuration provided via external API.
+    ///
+    /// [TURN]: https://en.wikipedia.org/wiki/TURN
+    pub conf: TurnConfig<Auth>,
+
+    /// [Allocation] [`Manager`].
+    ///
+    /// [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
+    pub alloc: Manager,
+
+    /// [Nonce]s storage.
+    ///
+    /// [Nonce] is a string chosen at random by the server and included in the
+    /// message-digest for preventing reply attacks.
+    ///
+    /// [Nonce]: https://en.wikipedia.org/wiki/Cryptographic_nonce
+    pub nonces: HashMap<String, Instant>,
+}
+
+impl<A> From<TurnConfig<A>> for TurnCtx<A> {
+    fn from(mut conf: TurnConfig<A>) -> Self {
+        if conf.channel_bind_lifetime == Duration::from_secs(0) {
+            conf.channel_bind_lifetime = DEFAULT_LIFETIME;
+        }
+
+        Self {
+            alloc: Manager::new(ManagerConfig {
+                relay_addr_generator: conf.relay_addr_generator.clone(),
+                alloc_close_notify: conf.alloc_close_notify.clone(),
+            }),
+            conf,
+            nonces: HashMap::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod get_lifetime_spec {
     use std::time::Duration;
@@ -1057,43 +1097,5 @@ mod handle_spec {
             .unwrap();
 
         assert!(turn.unwrap().alloc.get_alloc(&five_tuple).is_none());
-    }
-}
-
-/// [TURN] server context.
-///
-/// [TURN]: https://en.wikipedia.org/wiki/TURN
-pub(crate) struct TurnCtx<Auth> {
-    /// [TURN] server configuration provided via external API.
-    ///
-    /// [TURN]: https://en.wikipedia.org/wiki/TURN
-    pub conf: TurnConfig<Auth>,
-
-    /// [Allocation] manager.
-    ///
-    /// [Allocation]: https://datatracker.ietf.org/doc/html/rfc5766#section-5
-    pub alloc: Manager,
-
-    /// Nonces storage.
-    ///
-    /// Nonce is string chosen at random by the server and included in the
-    /// message-digest to prevent reply attacks.
-    pub nonces: HashMap<String, Instant>,
-}
-
-impl<A> From<TurnConfig<A>> for TurnCtx<A> {
-    fn from(mut conf: TurnConfig<A>) -> Self {
-        if conf.channel_bind_lifetime == Duration::from_secs(0) {
-            conf.channel_bind_lifetime = DEFAULT_LIFETIME;
-        }
-
-        Self {
-            alloc: Manager::new(ManagerConfig {
-                relay_addr_generator: conf.relay_addr_generator.clone(),
-                alloc_close_notify: conf.alloc_close_notify.clone(),
-            }),
-            conf,
-            nonces: HashMap::new(),
-        }
     }
 }

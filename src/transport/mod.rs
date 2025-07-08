@@ -169,7 +169,7 @@ pub enum Error {
     #[display("Underlying TCP/UDP transport is dead")]
     TransportIsDead,
 
-    /// Failed to encode message.
+    /// Failed to encode a [`Message`].
     #[display("Failed to encode STUN/TURN message: {_0:?}")]
     #[from(ignore)]
     Encode(#[error(not(source))] bytecodec::ErrorKind),

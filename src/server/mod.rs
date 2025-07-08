@@ -57,8 +57,8 @@ pub struct Config<Auth> {
 
     /// Optional [TURN] server configuration.
     ///
-    /// Enables [TURN] support on the provided [Transport]s, otherwise only
-    /// [STUN] ([RFC 5389]) will be is supported.
+    /// Enables [TURN] support on the provided [`Transport`]s, otherwise only
+    /// [STUN] ([RFC 5389]) will be enabled.
     ///
     /// [TURN]: https://en.wikipedia.org/wiki/TURN
     /// [STUN]: https://en.wikipedia.org/wiki/STUN
@@ -101,6 +101,8 @@ pub struct TurnConfig<Auth> {
     pub alloc_close_notify: Option<mpsc::Sender<Info>>,
 }
 
+// Manual implementation is provided to omit redundant `Auth: Clone` trait bound
+// imposed by the standard derive macro.
 impl<Auth> Clone for TurnConfig<Auth> {
     fn clone(&self) -> Self {
         Self {
@@ -157,7 +159,6 @@ impl Server {
                                     let Some(turn) = &mut turn else {
                                         continue;
                                     };
-
                                     turn.alloc
                                         .delete_allocations_by_username(&name);
                                     drop(completion);
@@ -170,12 +171,10 @@ impl Server {
                                         drop(tx.send(HashMap::new()));
                                         continue;
                                     };
-
                                     let infos =
                                         turn.alloc.get_allocations_info(
                                             five_tuples.as_ref()
                                         );
-
                                     drop(tx.send(infos).await);
                                 }
                                 Err(RecvError::Closed) => {

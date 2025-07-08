@@ -13,8 +13,15 @@ All user visible changes to this project will be documented in this file. This p
 
 ### BC Breaks
 
-- Change `Config` to make [TURN] optional. ([#8])
-- Change `Transport::send_to` to accept `Cow<[u8]>` instead of `Vec<u8>`. ([#8])
+- Split `Config` to `Config` and `TurnConfig` for [TURN] optionality. ([#8])
+- Changed `Transport::send_to` to accept `Cow<[u8]>` instead of `Vec<u8>`. ([#8])
+- Added `transport::Error::Encode` variant. ([#8])
+- Added `chandata::FormatError::BufferTooShort` variant. ([#8])
+
+### Added
+
+- `Transport::send_msg_to()` method. ([#8])
+- `NoneAuthHandler` for use in type signatures when [TURN] is disabled. ([#8])
 
 [#8]: https://github.com/instrumentisto/medea-turn-rs/pull/8
 

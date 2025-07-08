@@ -365,7 +365,7 @@ impl Allocation {
             loop {
                 let (recv_len, src_addr) = tokio::select! {
                     result = relay_socket.recv_from(
-                                &mut buf[ChannelData::HEADER_SIZE..]
+                        &mut buf[ChannelData::HEADER_SIZE..],
                     ) => {
                         if let Ok((n, src_addr)) = result {
                             (n, src_addr)
@@ -413,9 +413,9 @@ impl Allocation {
                                     transport::Error::TransportIsDead => {
                                         break;
                                     }
-                                    transport::Error::Encode(..)
+                                    transport::Error::ChannelData(..)
                                     | transport::Error::Decode(..)
-                                    | transport::Error::ChannelData(..)
+                                    | transport::Error::Encode(..)
                                     | transport::Error::Io(..) => {
                                         log::warn!(
                                             "Failed to send `ChannelData` from \
@@ -464,7 +464,7 @@ impl Allocation {
                         {
                             log::error!(
                                 "Failed to send `DataIndication` from \
-                                         `Allocation(src: {src_addr})`: {e}",
+                                 `Allocation(src: {src_addr})`: {e}",
                             );
                         }
                     } else {
