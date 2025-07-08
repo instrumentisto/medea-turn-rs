@@ -67,6 +67,8 @@ pub struct Config<Auth> {
 }
 
 /// [TURN] server configuration.
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
 #[derive(Debug)]
 pub struct TurnConfig<Auth> {
     /// [`Allocator`] of [`relay`] connections.

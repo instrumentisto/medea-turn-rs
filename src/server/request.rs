@@ -1065,6 +1065,8 @@ mod handle_spec {
 /// [TURN]: https://en.wikipedia.org/wiki/TURN
 pub(crate) struct TurnCtx<Auth> {
     /// [TURN] server configuration provided via external API.
+    ///
+    /// [TURN]: https://en.wikipedia.org/wiki/TURN
     pub conf: TurnConfig<Auth>,
 
     /// [Allocation] manager.

@@ -6,6 +6,20 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## [0.12.0] · unreleased
+[0.12.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.2
+
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.11.2...v0.12.0)
+
+### BC Breaks
+
+- Change `Config` to make [TURN] optional. ([#7])
+
+[#8]: https://github.com/instrumentisto/medea-turn-rs/pull/8
+
+
+
+
 ## [0.11.2] · 2025-06-21
 [0.11.2]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.2
 
