@@ -199,6 +199,24 @@ impl<T: ?Sized + AuthHandler> AuthHandler for Arc<T> {
     }
 }
 
+/// [`AuthHandler`] that always returns error. Can be used in type signatures
+/// when [TURN] is disabled.
+///
+/// [TURN]: https://en.wikipedia.org/wiki/TURN
+#[derive(Debug, Copy, Clone)]
+pub struct NoneAuthHandler;
+
+impl AuthHandler for NoneAuthHandler {
+    fn auth_handle(
+        &self,
+        _: &str,
+        _: &str,
+        _: SocketAddr,
+    ) -> Result<SecretString, Error> {
+        Err(Error::NoSuchUser)
+    }
+}
+
 /// Possible errors of a [STUN]/[TURN] [`Server`].
 ///
 /// [STUN]: https://en.wikipedia.org/wiki/STUN
