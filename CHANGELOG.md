@@ -7,7 +7,7 @@ All user visible changes to this project will be documented in this file. This p
 
 
 ## [0.12.0] · unreleased
-[0.12.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.11.2
+[0.12.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.12.0
 
 [Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.11.2...v0.12.0)
 
