@@ -14,6 +14,7 @@ All user visible changes to this project will be documented in this file. This p
 ### BC Breaks
 
 - Change `Config` to make [TURN] optional. ([#7])
+- Change `Transport::send_to` to accept `Cow` instead of `Vec<u8>`. ([#7])
 
 [#8]: https://github.com/instrumentisto/medea-turn-rs/pull/8
 
