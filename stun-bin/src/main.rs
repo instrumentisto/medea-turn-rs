@@ -66,12 +66,12 @@ async fn main() -> io::Result<()> {
         config.bind_port.unwrap(),
     );
 
-    let turn_server_config: ServerConfig<NoneAuthHandler> = ServerConfig {
+    let server_config: ServerConfig<NoneAuthHandler> = ServerConfig {
         connections: vec![Arc::new(UdpSocket::bind(bind_addr).await?)],
         turn: None,
     };
 
-    let serv = Server::new(turn_server_config);
+    let serv = Server::new(server_config);
 
     wait_for_shutdown().await?;
 
