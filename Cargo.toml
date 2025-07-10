@@ -34,3 +34,6 @@ trackable1 = { version = "1.3", package = "trackable", default-features = false 
 
 [dev-dependencies]
 hex = "0.4"
+
+[workspace]
+members = ["stun-bin"]
