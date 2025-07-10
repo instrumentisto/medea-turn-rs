@@ -80,20 +80,23 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 
-/// Waits for SIGINT or SIGTERM on unix and for Ctrl-C on non-unix platforms.
+#[cfg(unix)]
+/// Waits for SIGINT or SIGTERM.
 async fn wait_for_shutdown() -> io::Result<()> {
-    if cfg!(unix) {
-        let mut sigterm =
-            signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        let sigint = signal::ctrl_c();
+    let mut sigterm =
+        signal::unix::signal(signal::unix::SignalKind::terminate())?;
+    let sigint = signal::ctrl_c();
 
-        tokio::select! {
-            _ = sigint => {}
-            _ = sigterm.recv() => {}
-        }
-
-        Ok(())
-    } else {
-        signal::ctrl_c().await
+    tokio::select! {
+        _ = sigint => {}
+        _ = sigterm.recv() => {}
     }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+/// Waits for Ctrl-C.
+async fn wait_for_shutdown() -> io::Result<()> {
+    signal::ctrl_c().await
 }
