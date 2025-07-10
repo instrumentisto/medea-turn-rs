@@ -36,7 +36,7 @@ Options:
 
 ```
 
-It can also be configured with a [config.toml](config.toml).
+It can also be configured with an optional [config.toml](config.toml).
 
 
 ## License

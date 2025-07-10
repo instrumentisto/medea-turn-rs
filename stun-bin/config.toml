@@ -1,4 +1,16 @@
-# Default config
+# Example config with default values.
+
+# Maximum allowed level of application log entries.
+#
+# Defaults to `INFO`.
 log_level = "info"
+
+# IP that STUN UDP socket will bind to.
+#
+# Defaults to `0.0.0.0`.
 bind_ip = "0.0.0.0"
+
+# Port that STUN UDP will use.
+#
+# Defaults to `3478`.
 bind_port = 3478
