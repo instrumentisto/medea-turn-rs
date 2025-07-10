@@ -7,7 +7,7 @@ use tokio::signal;
 use tracing as log;
 use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 
-#[derive(Debug, Deserialize, Default, Parser)]
+#[derive(Debug, Default, Deserialize, Parser)]
 #[command(author, version, about)]
 struct Config {
     /// Maximum allowed level of application log entries.
@@ -81,10 +81,15 @@ async fn main() -> io::Result<()> {
 }
 
 #[cfg(unix)]
-/// Waits for SIGINT or SIGTERM.
+/// Waits for [SIGINT] or [SIGTERM].
+///
+/// [SIGINT]: https://en.wikipedia.org/wiki/Signal_(IPC)#SIGINT
+/// [SIGTERM]: https://en.wikipedia.org/wiki/Signal_(IPC)#SIGTERM
 async fn wait_for_shutdown() -> io::Result<()> {
+    use tokio::signal::unix;
+
     let mut sigterm =
-        signal::unix::signal(signal::unix::SignalKind::terminate())?;
+        unix::signal(unix::SignalKind::terminate())?;
     let sigint = signal::ctrl_c();
 
     tokio::select! {
@@ -96,7 +101,7 @@ async fn wait_for_shutdown() -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
-/// Waits for Ctrl-C.
+/// Waits for a [`signal::ctrl_c`].
 async fn wait_for_shutdown() -> io::Result<()> {
     signal::ctrl_c().await
 }

@@ -1,7 +1,9 @@
-`stun-bin`
-============
+Lightweight [STUN]/[TURN] server
+================================
 
-[STUN] server binary based on [medea-turn](https://crates.io/crates/medea-turn)
+[STUN] server binary based on [`medea-turn` crate].
+
+
 
 
 ## Usage
@@ -33,15 +35,16 @@ Options:
 
   -V, --version
           Print version
-
 ```
 
-It can also be configured with an optional [config.toml](config.toml).
+It can also be configured with an optional [`config.toml`](config.toml).
+
+
 
 
 ## License
 
-Copyright © 2024-2025 Instrumentisto Team, <https://github.com/instrumentisto>
+Copyright © 2025 Instrumentisto Team, <https://github.com/instrumentisto>
 
 Licensed under either of [Apache License, Version 2.0][APACHE] or [MIT license][MIT] at your option.
 
@@ -50,6 +53,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 
 
+[`medea-turn` crate]: https://docs.rs/medea-turn
 [APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.2/LICENSE-APACHE
 [MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.2/LICENSE-MIT
 [STUN]: https://en.wikipedia.org/wiki/STUN

@@ -3,7 +3,7 @@
 # Maximum allowed level of application log entries.
 #
 # Defaults to `INFO`.
-log_level = "info"
+log_level = "INFO"
 
 # IP that STUN UDP socket will bind to.
 #
