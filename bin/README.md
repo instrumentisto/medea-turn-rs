@@ -1,6 +1,8 @@
 Lightweight [STUN]/[TURN] server
 ================================
 
+[Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/main/bin/CHANGELOG.md)
+
 [STUN] server binary based on [`medea-turn` crate].
 
 
