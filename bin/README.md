@@ -8,36 +8,14 @@ Lightweight [STUN]/[TURN] server
 
 ## Usage
 
-```
-./stun --help
-STUN/TURN server implementation used by Medea media server.
+Can be configured with a `conf.toml` file. Path to the configuration file can be provided via command line argument `--conf /path/to/config.tml`,
+or via environment variable `export MEDEA_TURN__CONF=/path/to/turn.toml`.
 
-Usage: stun [OPTIONS]
+Alternatively can be configured via environment variables, directly or with a `.env` file.
 
-Options:
-      --log-level <LOG_LEVEL>
-          Maximum allowed level of application log entries.
-          
-          Defaults to `INFO`.
+If no configuration is provided then the default values will be used.
 
-      --bind-ip <BIND_IP>
-          IP that STUN UDP socket will bind to.
-          
-          Defaults to `0.0.0.0`.
-
-      --bind-port <BIND_PORT>
-          Port that STUN UDP will use.
-          
-          Defaults to `3478`.
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -V, --version
-          Print version
-```
-
-It can also be configured with an optional [`config.toml`](config.toml).
+Refer to [`turn.toml`](turn.toml) for the configuration options.
 
 
 

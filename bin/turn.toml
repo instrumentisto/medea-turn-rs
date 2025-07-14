@@ -1,0 +1,37 @@
+# Example config with default values.
+
+[log]
+# Maximum allowed level of application log entries.
+#
+# Env var: MEDEA_TURN__LOG__LEVEL
+# Possible values (in ascending order):
+#   "OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"
+#
+# Default:
+#   level = "INFO"
+
+# Replace `<path>` with a name of the concrete module you want to provide
+# specific application log settings for:
+#[log.app.mod.<path>]
+# Maximum allowed level of the module log entries.
+#
+# Overrides `log.app.level`.
+#
+# Possible values (in ascending order):
+#   "OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"
+#
+# Default:
+#   level = <log.app.level>
+
+[stun]
+# IP that STUN UDP socket will bind to.
+#
+# Env var: MEDEA_TURN__STUN__BIND_IP
+# Default:
+#   bind_ip = "0.0.0.0"
+
+# Port that STUN UDP will use.
+#
+# Env var: MEDEA_TURN__STUN__BIND_PORT
+# Default:
+#   bind_port = 3478
