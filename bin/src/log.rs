@@ -1,3 +1,5 @@
+//! Logging implementation based on [`tracing`].
+
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -34,10 +36,10 @@ use tracing_subscriber::{
 use crate::conf;
 
 /// Initializes [`tracing`] backend and all the tools relying on it:
-/// - Global structured logger with the given [`Level`].
+/// - Global structured logger with the configured [`Level`].
 ///
 /// [`Level`]: tracing::Level
-pub fn init(config: conf::Log) {
+pub(crate) fn init(config: conf::Log) {
     /// `Level`s outputted in `stderr`.
     const STDERR_LEVELS: &[tracing::Level] =
         &[tracing::Level::WARN, tracing::Level::ERROR];
@@ -84,7 +86,7 @@ pub fn init(config: conf::Log) {
 #[derive(Clone, Debug)]
 struct ModuleFilter {
     /// Specifically handled modules.
-    modules: HashMap<String, LevelFilter>,
+    modules: HashMap<Box<str>, LevelFilter>,
 
     /// Default [`LevelFilter`].
     default_level: LevelFilter,
@@ -114,7 +116,7 @@ impl ModuleFilter {
         let level = self
             .modules
             .iter()
-            .find_map(|(mod_, lvl)| path.starts_with(mod_).then_some(*lvl))
+            .find_map(|(mod_, lvl)| path.starts_with(&**mod_).then_some(*lvl))
             .unwrap_or(self.default_level);
 
         level >= *meta.level()
@@ -255,9 +257,9 @@ impl<S: SerializeMap> JsonEventVisitor<S> {
         }
     }
 
-    /// Completes serializing of the visited object, returning `Ok(())` if all
-    /// the fields were serialized correctly, or `Error(S::Error)` if a field
-    /// cannot be serialized.
+    /// Completes serializing of the visited object, returning [`Ok`]`(())` if
+    /// all the fields were serialized correctly, or [`Error`]`(S::Error)` if a
+    /// field cannot be serialized.
     fn finish(self) -> Result<S::Ok, S::Error> {
         self.state?;
         self.serializer.end()

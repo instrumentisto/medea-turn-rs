@@ -1,5 +1,8 @@
 # Example config with default values.
 
+
+
+
 [log]
 # Maximum allowed level of application log entries.
 #
@@ -12,16 +15,19 @@
 
 # Replace `<path>` with a name of the concrete module you want to provide
 # specific application log settings for:
-#[log.app.mod.<path>]
+#[log.mod.<path>]
 # Maximum allowed level of the module log entries.
 #
-# Overrides `log.app.level`.
+# Overrides `log.level`.
 #
 # Possible values (in ascending order):
 #   "OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"
 #
 # Default:
-#   level = <log.app.level>
+#   level = <log.level>
+
+
+
 
 [stun]
 # IP that STUN UDP socket will bind to.
