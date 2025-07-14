@@ -20,8 +20,8 @@ smart-default = "0.7"
 time = { version = "0.3", features = ["formatting"],  default-features = false }
 tokio = { version = "1.46", features = ["macros", "signal"], default-features = false }
 tracing = "0.1"
-tracing-core = { version = "0.1" }
-tracing-log = { version = "0.2" }
+tracing-core = "0.1"
+tracing-log = "0.2"
 tracing-record-hierarchical = "0.1"
-tracing-serde = { version = "0.2" }
+tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"], default-features = false }
