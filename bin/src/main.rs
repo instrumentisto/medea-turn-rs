@@ -157,7 +157,7 @@ use crate::conf::Conf;
 /// Runs the server.
 #[tokio::main(flavor = "current_thread")] // single thread is enough
 async fn main() -> anyhow::Result<()> {
-    drop(dotenv::dotenv().ok());
+    drop(dotenvy::dotenv().ok());
     let conf = Conf::parse()?;
 
     log::init(conf.log.clone());
