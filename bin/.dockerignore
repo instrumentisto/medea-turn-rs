@@ -1,0 +1,6 @@
+*
+
+# Sources and manifest.
+!Cargo.toml
+!Cargo.lock
+!src/
