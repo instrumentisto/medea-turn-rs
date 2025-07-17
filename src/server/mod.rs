@@ -16,6 +16,7 @@ use tokio::{
         },
         mpsc, oneshot,
     },
+    task::JoinHandle,
     time::Duration,
 };
 
@@ -123,6 +124,11 @@ impl<Auth> Clone for TurnConfig<Auth> {
 pub struct Server {
     /// [`broadcast::Sender`] to this [`Server`]'s internal loop.
     command_tx: broadcast::Sender<Command>,
+
+    /// Long-running tasks that drive the [`Server`].
+    ///
+    /// Used to perform healthcheck.
+    runners: Vec<JoinHandle<()>>,
 }
 
 impl Server {
@@ -136,7 +142,7 @@ impl Server {
         A: AuthHandler + Send + Sync + 'static,
     {
         let (command_tx, _) = broadcast::channel(16);
-        let this = Self { command_tx: command_tx.clone() };
+        let mut runners = Vec::with_capacity(config.connections.len());
 
         for conn in config.connections {
             let mut turn = config.turn.clone().map(TurnCtx::from);
@@ -144,7 +150,7 @@ impl Server {
             let mut handle_rx = command_tx.subscribe();
 
             let (mut close_tx, mut close_rx) = oneshot::channel::<()>();
-            drop(tokio::spawn(async move {
+            runners.push(tokio::spawn(async move {
                 let local_con_addr = conn.local_addr();
                 let protocol = conn.proto();
 
@@ -225,7 +231,7 @@ impl Server {
             }));
         }
 
-        this
+        Self { command_tx, runners }
     }
 
     /// Deletes all existing [allocations][1] with the provided `username`.
@@ -286,6 +292,12 @@ impl Server {
             info.extend(infos_rx.recv().await.ok_or(Error::Closed)?);
         }
         Ok(info)
+    }
+
+    /// Checks healthiness of the [`Server`] based on whether all long-running
+    /// transport loops that were initially created are still running.
+    pub fn healthz(&self) -> bool {
+        !self.runners.iter().any(JoinHandle::is_finished)
     }
 }
 
