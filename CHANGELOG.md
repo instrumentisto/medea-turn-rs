@@ -22,8 +22,10 @@ All user visible changes to this project will be documented in this file. This p
 
 - `Transport::send_msg_to()` method. ([#8])
 - `NoneAuthHandler` for use in type signatures when [TURN] is disabled. ([#8])
+- `Server::healthz` to check server healthiness. (#11) 
 
 [#8]: https://github.com/instrumentisto/medea-turn-rs/pull/8
+[#11]: https://github.com/instrumentisto/medea-turn-rs/pull/11
 
 
 
