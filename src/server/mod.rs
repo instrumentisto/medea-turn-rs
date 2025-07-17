@@ -125,9 +125,9 @@ pub struct Server {
     /// [`broadcast::Sender`] to this [`Server`]'s internal loop.
     command_tx: broadcast::Sender<Command>,
 
-    /// Long-running tasks that drive the [`Server`].
+    /// Long-running tasks driving the [`Server`].
     ///
-    /// Used to perform healthcheck.
+    /// Used by the [`Server::healthz()`] check.
     runners: Vec<JoinHandle<()>>,
 }
 
@@ -294,8 +294,9 @@ impl Server {
         Ok(info)
     }
 
-    /// Checks healthiness of the [`Server`] based on whether all long-running
-    /// transport loops that were initially created are still running.
+    /// Checks healthiness of this [`Server`] based on whether all the
+    /// initialized long-running transport loops are still running.
+    #[must_use]
     pub fn healthz(&self) -> bool {
         !self.runners.iter().any(JoinHandle::is_finished)
     }
