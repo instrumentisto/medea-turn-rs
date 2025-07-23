@@ -85,7 +85,7 @@ cargo.fmt:
 #	make cargo.lint
 
 cargo.lint:
-	cargo clippy --workspace --all-features -- -D warnings
+	cargo clippy --all-features -- -D warnings
 
 
 cargo.test: test.cargo
@@ -113,6 +113,7 @@ github_url := $(strip $(or $(GITHUB_SERVER_URL),https://github.com))
 github_repo := $(strip $(or $(GITHUB_REPOSITORY),$(OWNER)/$(NAME)))
 
 docker.image:
+	cd ../ && \
 	docker build --network=host --force-rm \
 		$(if $(call eq,$(no-cache),yes),--no-cache --pull,) \
 		--build-arg rust_ver=$(RUST_VER) \
@@ -123,7 +124,7 @@ docker.image:
 			$(shell git show --pretty=format:%H --no-patch)) \
 		--label org.opencontainers.image.version=$(subst bin@v,,$(strip \
 			$(shell git describe --tags --dirty --match='bin@v*'))) \
-		-t $(OWNER)/$(NAME):$(or $(tag),dev) ./
+		-t $(OWNER)/$(NAME):$(or $(tag),dev) -f bin/Dockerfile ./
 
 
 # Manually push project Docker images to container registries.

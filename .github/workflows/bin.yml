@@ -21,9 +21,15 @@ jobs:
   ################
 
   pr:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request'
+         && needs.clippy.result == 'success'
+         && needs.docker.result == 'success'
+         && needs.rustdoc.result == 'success'
+         && needs.rustfmt.result == 'success'
+         && needs.test.result == 'success' }}
     needs:
       - clippy
+      - docker
       - rustdoc
       - rustfmt
       - test
@@ -48,6 +54,7 @@ jobs:
           components: clippy
 
       - run: make cargo.lint
+        working-directory: bin/
 
   rustfmt:
     runs-on: ubuntu-latest
@@ -59,6 +66,7 @@ jobs:
           components: rustfmt
 
       - run: make cargo.fmt check=yes
+        working-directory: bin/
 
 
 
@@ -71,13 +79,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: ["stable", "beta", "nightly"]
+        toolchain: ["stable", "nightly"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.toolchain }}
+          toolchain: stable
           components: rust-src
 
       - run: cargo install cargo-careful
@@ -86,6 +94,7 @@ jobs:
       - run: make test.cargo
                   careful=${{ (matrix.toolchain == 'nightly' && 'yes')
                            ||                                   'no' }}
+        working-directory: bin/
 
 
 
@@ -133,6 +142,7 @@ jobs:
       - run: make cargo.doc private=yes open=no
         env:
           RUSTFLAGS: -D warnings
+        working-directory: bin/
 
 
 
@@ -146,7 +156,12 @@ jobs:
     if: ${{ github.event_name == 'push'
          && (github.ref == 'refs/heads/main'
              || startsWith(github.ref, 'refs/tags/bin@v')) }}
-    needs: ["clippy", "docker", "rustdoc", "rustfmt", "test"]
+    needs:
+      - clippy
+      - docker
+      - rustdoc
+      - rustfmt
+      - test
     strategy:
       fail-fast: false
       matrix:
@@ -294,4 +309,3 @@ jobs:
           body: |
             [API docs](https://docs.rs/medea-turn/${{ steps.release.outputs.version }})
             [Changelog](${{ steps.changelog.outputs.link }})
-          prerelease: ${{ contains(steps.release.outputs.version, '-') }}

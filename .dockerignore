@@ -2,5 +2,7 @@
 
 # Sources and manifest.
 !Cargo.toml
-!Cargo.lock
 !src/
+!bin/Cargo.toml
+!bin/Cargo.lock
+!bin/src/
