@@ -33,7 +33,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 
 [`medea-turn` crate]: https://docs.rs/medea-turn
-[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.2/LICENSE-APACHE
-[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.11.2/LICENSE-MIT
+[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.12.0/LICENSE-APACHE
+[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.12.0/LICENSE-MIT
 [STUN]: https://en.wikipedia.org/wiki/STUN
 [TURN]: https://en.wikipedia.org/wiki/TURN

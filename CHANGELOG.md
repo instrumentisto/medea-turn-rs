@@ -6,7 +6,7 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
-## [0.12.0] · unreleased
+## [0.12.0] · 2025-07-17
 [0.12.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.12.0
 
 [Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.11.2...v0.12.0)
@@ -14,7 +14,7 @@ All user visible changes to this project will be documented in this file. This p
 ### BC Breaks
 
 - Split `Config` to `Config` and `TurnConfig` for [TURN] optionality. ([#8])
-- Changed `Transport::send_to` to accept `Cow<[u8]>` instead of `Vec<u8>`. ([#8])
+- Changed `Transport::send_to()` method to accept `Cow<[u8]>` instead of `Vec<u8>`. ([#8])
 - Added `transport::Error::Encode` variant. ([#8])
 - Added `chandata::FormatError::BufferTooShort` variant. ([#8])
 
@@ -22,8 +22,10 @@ All user visible changes to this project will be documented in this file. This p
 
 - `Transport::send_msg_to()` method. ([#8])
 - `NoneAuthHandler` for use in type signatures when [TURN] is disabled. ([#8])
+- `Server::healthz()` method reporting server healthiness. ([#11])
 
 [#8]: https://github.com/instrumentisto/medea-turn-rs/pull/8
+[#11]: https://github.com/instrumentisto/medea-turn-rs/pull/11
 
 
 
