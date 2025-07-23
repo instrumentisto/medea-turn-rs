@@ -258,7 +258,7 @@ impl<S: SerializeMap> JsonEventVisitor<S> {
     }
 
     /// Completes serializing of the visited object, returning [`Ok`]`(())` if
-    /// all the fields were serialized correctly, or [`Error`]`(S::Error)` if a
+    /// all the fields were serialized correctly, or [`Err`]`(S::Error)` if a
     /// field cannot be serialized.
     fn finish(self) -> Result<S::Ok, S::Error> {
         self.state?;
