@@ -110,7 +110,7 @@ docker-tags = $(strip $(if $(call eq,$(tags),),\
 #	                  [debug=(yes|no)]
 
 github_url := $(strip $(or $(GITHUB_SERVER_URL),https://github.com))
-github_repo := $(strip $(or $(GITHUB_REPOSITORY),$(OWNER)/$(NAME)))
+github_repo := $(strip $(or $(GITHUB_REPOSITORY),$(OWNER)/$(NAME)-rs))
 
 docker.image:
 	cd ../ && \

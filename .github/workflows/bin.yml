@@ -253,7 +253,7 @@ jobs:
         uses: christian-korneck/update-container-description-action@v1
         with:
           provider: dockerhub
-          destination_container_repo: ${{ github.repository }}
+          destination_container_repo: ${{ github.repository_owner }}/medea-turn
           readme_file: bin/README.md
         env:
           DOCKER_USER: ${{ secrets.DOCKERHUB_BOT_USER }}
@@ -264,7 +264,7 @@ jobs:
         uses: christian-korneck/update-container-description-action@v1
         with:
           provider: quay
-          destination_container_repo: ${{ matrix.registry }}/${{ github.repository }}
+          destination_container_repo: ${{ matrix.registry }}/${{ github.repository_owner }}/medea-turn
           readme_file: bin/README.md
         env:
           DOCKER_APIKEY: ${{ secrets.QUAYIO_API_TOKEN }}
