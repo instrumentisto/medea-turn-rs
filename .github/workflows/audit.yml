@@ -3,11 +3,11 @@ name: Security audit
 on:
   push:
     branches: ["main"]
-    tags: ["v*"]
-    paths: ["**/Cargo.toml"]
+    tags: ["bin@v*", "v*"]
+    paths: ["**/Cargo.lock", "**/Cargo.toml"]
   pull_request:
     branches: ["main"]
-    paths: ["**/Cargo.toml"]
+    paths: ["**/Cargo.lock", "**/Cargo.toml"]
   schedule:
     - cron: "7 7 * * *"
 
@@ -21,6 +21,11 @@ jobs:
         with:
           toolchain: stable
 
-      - uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo install cargo-audit
+
+      - name: Audit crate
+        run: cargo audit
+
+      - name: Audit binary
+        run: cargo audit
+        working-directory: bin/
