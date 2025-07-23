@@ -27,5 +27,5 @@ jobs:
         run: cargo audit
 
       - name: Audit binary
-        run: cargo audit
+        run: cargo audit --locked
         working-directory: bin/
