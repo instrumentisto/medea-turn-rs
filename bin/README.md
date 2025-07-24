@@ -6,7 +6,6 @@ Lightweight [STUN]/[TURN] server
 [![Docker Hub](https://img.shields.io/docker/pulls/instrumentisto/medea-turn?label=Docker%20Hub%20pulls "Docker Hub pulls")](https://hub.docker.com/r/instrumentisto/medea-turn)
 [![Quay.io](https://quay.io/repository/instrumentisto/medea-turn/status "Quay.io")](https://quay.io/repository/instrumentisto/medea-turn)
 
-
 [Docker Hub](https://hub.docker.com/r/instrumentisto/medea-turn)
 | [GitHub Container Registry](https://github.com/orgs/instrumentisto/packages/container/package/medea-turn)
 | [Quay.io](https://quay.io/repository/instrumentisto/medea-turn)
@@ -43,7 +42,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 
 [`medea-turn` crate]: https://docs.rs/medea-turn
-[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.12.0/LICENSE-APACHE
-[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/v0.12.0/LICENSE-MIT
+[APACHE]: https://github.com/instrumentisto/medea-turn-rs/blob/bin@v0.1.0-lib.0.12.0/LICENSE-APACHE
+[MIT]: https://github.com/instrumentisto/medea-turn-rs/blob/bin@v0.1.0-lib.0.12.0/LICENSE-MIT
 [STUN]: https://en.wikipedia.org/wiki/STUN
 [TURN]: https://en.wikipedia.org/wiki/TURN

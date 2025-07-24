@@ -210,7 +210,7 @@ jobs:
         uses: actions-ecosystem/action-regex-match@v2
         with:
           text: ${{ github.ref }}
-          regex: '^refs/tags/bin@v((([0-9]+)\.[0-9]+)\.[0-9]+(-.+)?)$'
+          regex: '^refs/tags/bin@v(((([0-9]+)\.[0-9]+)\.[0-9]+)-.+?)$'
         if: ${{ steps.skip.outputs.no == 'true'
              && startsWith(github.ref, 'refs/tags/bin@v') }}
       - name: Form version Docker tags
@@ -220,13 +220,12 @@ jobs:
           result-encoding: string
           script: |
             let versions = '${{ steps.semver.outputs.group1 }}';
-            if ('${{ steps.semver.outputs.group4 }}' === '') {
-              versions += ',${{ steps.semver.outputs.group2 }}';
-              if ('${{ steps.semver.outputs.group3 }}' !== '0') {
-                versions += ',${{ steps.semver.outputs.group3 }}';
-              }
-              versions += ',latest';
+            versions += ',${{ steps.semver.outputs.group2 }}';
+            versions += ',${{ steps.semver.outputs.group3 }}';
+            if ('${{ steps.semver.outputs.group4 }}' !== '0') {
+              versions += ',${{ steps.semver.outputs.group4 }}';
             }
+            versions += ',latest';
             return versions;
         if: ${{ steps.skip.outputs.no == 'true'
              && startsWith(github.ref, 'refs/tags/bin@v') }}
@@ -304,5 +303,5 @@ jobs:
         with:
           name: bin/${{ steps.release.outputs.version }}
           body: |
-            [API docs](https://docs.rs/medea-turn/${{ steps.release.outputs.version }})
             [Changelog](${{ steps.changelog.outputs.link }})
+          make_latest: "false"
