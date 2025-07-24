@@ -176,6 +176,7 @@ jobs:
                 || (matrix.registry == 'docker.io'
                     && secrets.DOCKERHUB_BOT_USER == ''))
              ) }}" >> $GITHUB_OUTPUT
+        working-directory: ./
 
       - uses: actions/checkout@v4
         if: ${{ steps.skip.outputs.no == 'true' }}
