@@ -21,11 +21,11 @@ jobs:
         with:
           toolchain: stable
 
-      - run: cargo install cargo-audit
+      - run: cargo install cargo-audit --locked
 
       - name: Audit crate
-        run: cargo audit
+        run: cargo audit --deny warnings
 
       - name: Audit binary
-        run: cargo audit --locked
+        run: cargo audit --deny warnings
         working-directory: bin/
