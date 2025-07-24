@@ -6,10 +6,10 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
-## [0.1.0] · unreleased
-[0.1.0]: https://github.com/instrumentisto/medea-turn-rs/tree/bin-v0.1.0/bin
+## [0.1.0-lib.0.11.2] · unreleased
+[0.1.0-lib.0.11.2]: https://github.com/instrumentisto/medea-turn-rs/tree/bin@v0.1.0-lib.0.11.2/bin
 
-[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/091d2d72...bin-v0.1.0)
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/091d2d72...bin@v0.1.0-lib.0.11.2)
 
 ## Added
 

@@ -1,0 +1,8 @@
+*
+
+# Sources and manifest.
+!Cargo.toml
+!src/
+!bin/Cargo.toml
+!bin/Cargo.lock
+!bin/src/

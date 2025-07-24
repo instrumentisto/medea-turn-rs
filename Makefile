@@ -65,7 +65,7 @@ cargo.fmt:
 #	make cargo.lint
 
 cargo.lint:
-	cargo clippy --workspace --all-features -- -D warnings
+	cargo clippy --all-features -- -D warnings
 
 
 cargo.test: test.cargo
