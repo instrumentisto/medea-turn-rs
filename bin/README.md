@@ -3,8 +3,13 @@ Lightweight [STUN]/[TURN] server
 
 [![Release](https://img.shields.io/github/v/release/instrumentisto/medea-turn-rs?filter=q%3Dbin%252F&display_name=release "Release")](https://github.com/instrumentisto/medea-turn-rs/releases?q=bin%252F)
 [![CI](https://github.com/instrumentisto/medea-turn-rs/actions/workflows/bin.yml/badge.svg?branch=main "Binary CI")](https://github.com/instrumentisto/medea-turn-rs/actions/workflows/bin.yml?query=branch%3Amain)\
-[![Docker Hub](https://img.shields.io/docker/pulls/instrumentisto/medea-turn?label=Docker%20Hub%20pulls "Docker Hub pulls")](https://hub.docker.com/r/instrumentisto/geckodriver)
+[![Docker Hub](https://img.shields.io/docker/pulls/instrumentisto/medea-turn?label=Docker%20Hub%20pulls "Docker Hub pulls")](https://hub.docker.com/r/instrumentisto/medea-turn)
 [![Quay.io](https://quay.io/repository/instrumentisto/medea-turn/status "Quay.io")](https://quay.io/repository/instrumentisto/medea-turn)
+
+
+[Docker Hub](https://hub.docker.com/r/instrumentisto/medea-turn)
+| [GitHub Container Registry](https://github.com/orgs/instrumentisto/packages/container/package/medea-turn)
+| [Quay.io](https://quay.io/repository/instrumentisto/medea-turn)
 
 [Changelog](https://github.com/instrumentisto/medea-turn-rs/blob/main/bin/CHANGELOG.md)
 

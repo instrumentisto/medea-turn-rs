@@ -119,6 +119,12 @@ docker.image:
 		--build-arg rust_ver=$(RUST_VER) \
 		--build-arg rustc_mode=$(if $(call eq,$(debug),no),release,debug) \
 		--build-arg rustc_opts=$(if $(call eq,$(debug),no),--release,) \
+		--label org.opencontainers.image.description="$(strip \
+			$(shell grep -m1 'description = "' Cargo.toml | cut -d'"' -f2))" \
+		--label org.opencontainers.image.documentation=$(strip \
+			https://raw.githubusercontent.com/$(github_repo)/refs/heads/main/bin/README.md) \
+		--label org.opencontainers.image.licenses="$(strip \
+			$(shell grep -m1 'license = "' Cargo.toml | cut -d'"' -f2))" \
 		--label org.opencontainers.image.source=$(github_url)/$(github_repo) \
 		--label org.opencontainers.image.revision=$(strip \
 			$(shell git show --pretty=format:%H --no-patch)) \
