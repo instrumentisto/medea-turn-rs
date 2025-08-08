@@ -68,7 +68,7 @@ pub struct Stun {
     /// Defaults to `0.0.0.0`.
     ///
     /// [STUN]: https://webrtcglossary.com/stun
-    #[default(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))]
+    #[default(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     pub bind_ip: IpAddr,
 
     /// Port that [STUN] UDP socket will use.
