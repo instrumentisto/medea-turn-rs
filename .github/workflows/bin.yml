@@ -180,7 +180,7 @@ jobs:
       - uses: actions/checkout@v6
         if: ${{ steps.skip.outputs.no == 'true' }}
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: docker-${{ github.run_number }}
           path: bin/.cache/docker/
