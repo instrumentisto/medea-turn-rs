@@ -32,7 +32,7 @@ If no configuration is provided, then the default values will be used. See the [
 
 ## License
 
-Copyright © 2025 Instrumentisto Team, <https://github.com/instrumentisto>
+Copyright © 2025-2026 Instrumentisto Team, <https://github.com/instrumentisto>
 
 Licensed under either of [Apache License, Version 2.0][APACHE] or [MIT license][MIT] at your option.
 

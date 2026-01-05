@@ -18,7 +18,7 @@ Majorly refactored hard fork of the [`webrtc-rs/turn` crate](https://github.com/
 
 ## License
 
-Copyright © 2024-2025 Instrumentisto Team, <https://github.com/instrumentisto>
+Copyright © 2024-2026 Instrumentisto Team, <https://github.com/instrumentisto>
 
 Licensed under either of [Apache License, Version 2.0][APACHE] or [MIT license][MIT] at your option.
 
