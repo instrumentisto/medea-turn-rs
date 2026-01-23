@@ -141,7 +141,7 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// If new port fails to be allocated. See the [`Error`] for details
+    /// If new port fails to be allocated. See the [`Error`] for details.
     pub(crate) async fn get_random_even_port(&self) -> Result<u16, Error> {
         self.relay_allocator
             .allocate_conn(true, 0)
