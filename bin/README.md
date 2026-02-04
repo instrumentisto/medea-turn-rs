@@ -20,7 +20,7 @@ Lightweight [STUN]/[TURN] server
 ## Usage
 
 Can be configured with a `config.toml` file. Path to the configuration file can be provided:
-- either via CLI argument `--conf=/path/to/config.tml`;
+- either via CLI argument `--conf=/path/to/config.toml`;
 - or via environment variable `MEDEA_TURN__CONF=/path/to/config.toml`.
 
 `.env` file is also supported.
