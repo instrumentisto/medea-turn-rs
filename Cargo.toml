@@ -21,7 +21,7 @@ bytes = "1.6"
 derive_more = { version = "2.0", features = ["debug", "display", "error", "from"] }
 futures = "0.3.30"
 log = "0.4.25"
-rand = "0.9"
+rand = "0.10"
 secrecy = "0.10"
 stun_codec = "0.4"
 tokio = { version = "1.32", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }

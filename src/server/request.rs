@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use rand::{Rng as _, distr::Alphanumeric};
+use rand::{RngExt as _, distr::Alphanumeric};
 use secrecy::{ExposeSecret as _, SecretString};
 use stun_codec::{
     Attribute as _, Message, MessageClass,
