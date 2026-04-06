@@ -34,7 +34,18 @@ use crate::{
 /// [RFC 5766 Section 2.2][1].
 ///
 /// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
-pub(crate) const DEFAULT_LIFETIME: Duration = Duration::from_secs(10 * 60);
+pub(crate) const DEFAULT_ALLOC_LIFETIME: Duration =
+    Duration::from_secs(10 * 60);
+
+/// Maximum allowed lifetime of an [allocation][1].
+///
+/// See [RFC 5766 Section 6.2][2]:
+/// > It is RECOMMENDED that the server use a maximum allowed lifetime value of
+/// > no more than 3600 seconds (1 hour).
+///
+/// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
+/// [2]: https://tools.ietf.org/html/rfc5766#section-6.2
+pub(crate) const MAX_ALLOC_LIFETIME: Duration = Duration::from_secs(3600);
 
 /// [MTU] of UDP connections.
 ///
@@ -174,7 +185,7 @@ impl Server {
                                     tx,
                                 )) => {
                                     let Some(turn) = &mut turn else {
-                                        drop(tx.send(HashMap::new()));
+                                        drop(tx.send(HashMap::new()).await);
                                         continue;
                                     };
                                     let infos =
