@@ -324,7 +324,7 @@ pub enum Error {
     #[display("no allocation found")]
     NoAllocationFound,
 
-    /// Operation on an [`Allocation`] whose relay lifetime has ended or was
+    /// Operation on an allocation whose relay lifetime has ended or was
     /// explicitly torn down.
     #[display("allocation is inactive")]
     AllocationInactive,

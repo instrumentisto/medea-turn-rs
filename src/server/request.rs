@@ -26,8 +26,6 @@ use stun_codec::{
 };
 use tokio::time::{Duration, Instant};
 
-#[cfg(doc)]
-use crate::allocation::Allocation;
 use crate::{
     AuthHandler, Error, TurnConfig,
     allocation::{Allocation, FiveTuple, Manager, ManagerConfig},
