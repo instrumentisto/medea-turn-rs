@@ -286,8 +286,8 @@ pub enum Error {
     #[display("message integrity mismatch")]
     IntegrityMismatch,
 
-    /// Non-Allocate request uses a different username than the one that
-    /// created the [allocation].
+    /// Non-Allocate request uses a different username than the one that created
+    /// the [allocation].
     ///
     /// See [RFC 5766 Section 4][1].
     ///
@@ -325,8 +325,10 @@ pub enum Error {
     #[display("no allocation found")]
     NoAllocationFound,
 
-    /// Operation on an allocation whose relay lifetime has ended or was
+    /// Operation on an [allocation] whose relay lifetime has ended or was
     /// explicitly torn down.
+    ///
+    /// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
     #[display("allocation is inactive")]
     AllocationInactive,
 

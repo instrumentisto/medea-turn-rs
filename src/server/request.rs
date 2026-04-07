@@ -158,19 +158,19 @@ async fn handle_channel_data(
 ) -> Result<(), Error> {
     log::trace!("Received `ChannelData` for {five_tuple}");
 
-    // For all TURN messages (including ChannelData) EXCEPT an Allocate request,
-    // if the 5-tuple does not identify an existing allocation, then the
-    // message MUST either be rejected with a 437 Allocation Mismatch error
-    // (if it is a request) or silently ignored (if it is an indication or a
-    // ChannelData message).
+    // For all TURN messages (including `ChannelData`) EXCEPT an `Allocate`
+    // request, if the 5-tuple does not identify an existing allocation, then
+    // the message MUST either be rejected with a 437 (Allocation Mismatch)
+    // error (if it is a request) or silently ignored (if it is an indication or
+    // a `ChannelData` message).
     let Some(alloc) = allocs.get_alloc(&five_tuple) else {
         log::trace!("Could not find `Allocation` for {five_tuple}");
         return Ok(());
     };
 
     let Some(peer) = alloc.get_channel_addr(&data.num()).await else {
-        // If the ChannelData message is received on a channel that is not bound
-        // to any peer, then the message is silently discarded.
+        // If the `ChannelData` message is received on a channel that is not
+        // bound to any peer, then the message is silently discarded.
         log::trace!("`ChannelData` not bound to any peer");
         return Ok(());
     };
@@ -351,14 +351,13 @@ async fn handle_allocate_request(
         requested_port = random_port;
     }
 
-    // If the request contains a LIFETIME attribute, then the
-    // server computes the minimum of the client's proposed lifetime and the
-    // server's maximum allowed lifetime. If this computed value is greater
-    // than the default lifetime, then the server uses the computed lifetime
-    // as the initial value of the time-to-expiry field. Otherwise, the
-    // server uses the default lifetime. It is RECOMMENDED that the server
-    // use a maximum allowed lifetime value of no more than 3600 seconds (1
-    // hour).
+    // If the request contains a `LIFETIME` attribute, then the server computes
+    // the minimum of the client's proposed lifetime and the server's maximum
+    // allowed lifetime. If this computed value is greater than the default
+    // lifetime, then the server uses the computed lifetime as the initial value
+    // of the time-to-expiry field. Otherwise, the server uses the default
+    // lifetime. It is RECOMMENDED that the server use a maximum allowed
+    // lifetime value of no more than 3600 seconds (1 hour).
     let lifetime = msg
         .get_attribute::<Lifetime>()
         .map_or(DEFAULT_ALLOC_LIFETIME, Lifetime::lifetime)
@@ -596,13 +595,14 @@ async fn handle_refresh_request(
         get_alloc_for_uname(&msg, conn, allocs, five_tuple, &creds).await?;
 
     // The server computes a value called the "desired lifetime" as follows:
-    // if the request contains a LIFETIME attribute and the attribute value
-    // is 0, then the "desired lifetime" is 0. Otherwise, if the request
-    // contains a LIFETIME attribute, then the server computes the minimum of
-    // the client's requested lifetime and the server's maximum allowed
-    // lifetime. If this computed value is greater than the default lifetime,
-    // then the "desired lifetime" is the computed value. Otherwise, the
-    // "desired lifetime" is the default lifetime.
+    // - If the request contains a `LIFETIME` attribute and the attribute value
+    //   is 0, then the "desired lifetime" is 0.
+    // - Otherwise, if the request contains a `LIFETIME` attribute, then the
+    //   server computes the minimum of the client's requested lifetime and the
+    //   server's maximum allowed lifetime. If this computed value is greater
+    //   than the default lifetime, then the "desired lifetime" is the computed
+    //   value.
+    // - Otherwise, the "desired lifetime" is the default lifetime.
     let lifetime = match msg.get_attribute::<Lifetime>().map(Lifetime::lifetime)
     {
         None => Some(DEFAULT_ALLOC_LIFETIME),
@@ -611,12 +611,10 @@ async fn handle_refresh_request(
     };
 
     // Subsequent processing depends on the "desired lifetime" value:
-    //
-    // o  If the "desired lifetime" is 0, then the request succeeds and the
-    //    allocation is deleted.
-    // o  If the "desired lifetime" is non-zero, then the request succeeds
-    //    and the allocation's time-to-expiry is set to the "desired
-    //    lifetime".
+    // - If the "desired lifetime" is 0, then the request succeeds and the
+    //   allocation is deleted.
+    // - If the "desired lifetime" is non-zero, then the request succeeds and
+    //   the allocation's time-to-expiry is set to the "desired lifetime".
     if let Some(lifetime) = lifetime {
         // If a server receives a Refresh Request with a
         // REQUESTED-ADDRESS-FAMILY attribute, and the
@@ -713,10 +711,10 @@ async fn handle_create_permission_request(
         add_count += 1;
     }
 
-    // The CreatePermission request MUST contain at least one XOR-PEER-ADDRESS
-    // attribute and MAY contain multiple such attributes. If no such attribute
-    // exists, or if any of these attributes are invalid, then a 400
-    // (Bad Request) error is returned.
+    // The `CreatePermission` request MUST contain at least one
+    // `XOR-PEER-ADDRESS` attribute and MAY contain multiple such attributes. If
+    // no such attribute exists, or if any of these attributes are invalid, then
+    // a 400 (Bad Request) error is returned.
     if add_count == 0 {
         respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
         return Err(Error::AttributeNotFound);
@@ -746,20 +744,20 @@ async fn handle_send_indication(
 ) -> Result<(), Error> {
     log::trace!("Received `SendIndication` for {five_tuple}");
 
-    // For all TURN messages (including ChannelData) EXCEPT an Allocate request,
-    // if the 5-tuple does not identify an existing allocation, then the
-    // message MUST either be rejected with a 437 Allocation Mismatch error
-    // (if it is a request) or silently ignored (if it is an indication or a
-    // ChannelData message).
+    // For all TURN messages (including `ChannelData`) EXCEPT an `Allocate`
+    // request, if the 5-tuple does not identify an existing allocation, then
+    // the message MUST either be rejected with a 437 (Allocation Mismatch)
+    // error (if it is a request) or silently ignored (if it is an indication or
+    // a `ChannelData` message).
     let Some(a) = allocs.get_alloc(&five_tuple) else {
         log::trace!("Could not find `Allocation` for `SendIndication`");
         return Ok(());
     };
 
-    // The Send indication MUST contain both an XOR-PEER-ADDRESS attribute and
-    // a DATA attribute. If one of these attributes is missing or invalid, then
-    // the message is discarded. Note that the DATA attribute is allowed to
-    // contain zero bytes of data.
+    // The `Send` indication MUST contain both an `XOR-PEER-ADDRESS` attribute
+    // and a `DATA` attribute. If one of these attributes is missing or invalid,
+    // then the message is discarded. Note, that the `DATA` attribute is allowed
+    // to contain zero bytes of data.
     let Some(data_attr) = msg.get_attribute::<Data>() else {
         log::trace!("`SendIndication` has no data");
         return Ok(());
@@ -772,7 +770,7 @@ async fn handle_send_indication(
     };
 
     // The server also checks that there is a permission installed for the IP
-    // address contained in the XOR-PEER-ADDRESS attribute. If no such
+    // address contained in the `XOR-PEER-ADDRESS` attribute. If no such
     // permission exists, the message is discarded.
     if !a.has_permission(&peer_address).await {
         log::trace!("`SendIndication` has permission for {peer_address}");
@@ -785,10 +783,10 @@ async fn handle_send_indication(
 /// Returns the [`Allocation`] matching the provided [`FiveTuple`] and
 /// [`LongTermCredentials`] [`Username`].
 ///
-/// Sends [`AllocationMismatch`] [`MessageClass::ErrorResponse`] if failed
-/// to find [`Allocation`] with the given [`FiveTuple`].
+/// Sends an [`AllocationMismatch`] [`MessageClass::ErrorResponse`] if failed
+/// to find [`Allocation`] with the provided [`FiveTuple`].
 ///
-/// Sends [`WrongCredentials`] [`MessageClass::ErrorResponse`] on [`Username`]
+/// Sends a [`WrongCredentials`] [`MessageClass::ErrorResponse`] on [`Username`]
 /// mismatch.
 async fn get_alloc_for_uname<'a>(
     msg: &Message<Attribute>,
@@ -799,11 +797,11 @@ async fn get_alloc_for_uname<'a>(
 ) -> Result<&'a Allocation, Error> {
     // When a TURN message arrives at the server from the client, the server
     // uses the 5-tuple in the message to identify the associated allocation.
-    // For all TURN messages (including ChannelData) EXCEPT an Allocate request,
-    // if the 5-tuple does not identify an existing allocation, then the
-    // message MUST either be rejected with a 437 Allocation Mismatch error
-    // (if it is a request) or silently ignored (if it is an indication or
-    // a ChannelData message).
+    // For all TURN messages (including `ChannelData`) EXCEPT an `Allocate`
+    // request, if the 5-tuple does not identify an existing allocation, then
+    // the message MUST either be rejected with a 437 (Allocation Mismatch)
+    // error (if it is a request) or silently ignored (if it is an indication or
+    // a `ChannelData` message).
     let Some(alloc) = allocs.get_alloc(&five_tuple) else {
         respond_with_err(msg, AllocationMismatch, conn, five_tuple.src_addr)
             .await;
@@ -856,14 +854,14 @@ async fn handle_channel_bind_request(
         return Err(Error::AttributeNotFound);
     };
 
-    // Port 0 is not meaningful so reject it explicitly.
+    // Port 0 is not meaningful, so reject it explicitly.
     if peer_addr.port() == 0 {
         respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
         return Err(Error::AttributeNotFound);
     }
 
-    // If the XOR-PEER-ADDRESS attribute contains an address of an address
+    // If the `XOR-PEER-ADDRESS` attribute contains an address of an address
     // family different than that of the relayed transport address for the
     // allocation, the server MUST generate an error response with the 443
     // (Peer Address Family Mismatch) response code. [RFC 6156, Section 7.2]

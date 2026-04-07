@@ -76,7 +76,9 @@ impl Manager {
     /// Creates a new [`Allocation`] with provided parameters and starts
     /// relaying it.
     ///
-    /// The provided `lifetime` must not be zero.
+    /// # Panics
+    ///
+    /// The provided `lifetime` must not be [`Duration::ZERO`].
     pub(crate) async fn create_allocation(
         &mut self,
         five_tuple: FiveTuple,
