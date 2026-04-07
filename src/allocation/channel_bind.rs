@@ -96,7 +96,7 @@ mod allocation_spec {
     use crate::{
         Allocation, Error, FiveTuple,
         attr::{ChannelNumber, Username},
-        server::DEFAULT_LIFETIME,
+        server::DEFAULT_ALLOC_LIFETIME,
     };
 
     /// Creates an [`Allocation`] with a bound [`ChannelBind`] for testing
@@ -112,7 +112,7 @@ mod allocation_spec {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
-            DEFAULT_LIFETIME,
+            DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
         );

@@ -75,6 +75,10 @@ impl Manager {
 
     /// Creates a new [`Allocation`] with provided parameters and starts
     /// relaying it.
+    ///
+    /// # Panics
+    ///
+    /// The provided `lifetime` must not be [`Duration::ZERO`].
     pub(crate) async fn create_allocation(
         &mut self,
         five_tuple: FiveTuple,
@@ -84,9 +88,10 @@ impl Manager {
         username: Username,
         use_ipv4: bool,
     ) -> Result<SocketAddr, Error> {
-        if lifetime == Duration::from_secs(0) {
-            return Err(Error::LifetimeZero);
-        }
+        assert!(
+            lifetime > Duration::ZERO,
+            "allocation must be create with a non-zero lifetime"
+        );
 
         self.allocations.retain(|_, v| v.is_alive());
 
@@ -170,7 +175,7 @@ mod spec {
         attr::{Attribute, ChannelNumber, Data, Username},
         chandata::ChannelData,
         relay,
-        server::DEFAULT_LIFETIME,
+        server::DEFAULT_ALLOC_LIFETIME,
     };
 
     /// Creates a new [`Manager`] for testing purposes.
@@ -234,7 +239,7 @@ mod spec {
                 five_tuple,
                 Arc::new(turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
             )
@@ -250,7 +255,7 @@ mod spec {
             a.add_channel_bind(
                 ChannelNumber::MIN,
                 peer_listener2.local_addr().unwrap(),
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
             )
             .await
             .unwrap();
@@ -316,7 +321,7 @@ mod spec {
                 five_tuple,
                 DynTransport::clone(&turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
             )
@@ -328,7 +333,7 @@ mod spec {
                 five_tuple,
                 DynTransport::clone(&turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
             )
@@ -349,7 +354,7 @@ mod spec {
                 five_tuple,
                 DynTransport::clone(&turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
             )
@@ -433,7 +438,7 @@ mod spec {
                 five_tuple1,
                 DynTransport::clone(&turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
             )
@@ -444,7 +449,7 @@ mod spec {
                 five_tuple2,
                 DynTransport::clone(&turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
             )
@@ -455,7 +460,7 @@ mod spec {
                 five_tuple3,
                 DynTransport::clone(&turn_socket),
                 0,
-                DEFAULT_LIFETIME,
+                DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user2")).unwrap(),
                 true,
             )

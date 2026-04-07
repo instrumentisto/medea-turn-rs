@@ -286,6 +286,16 @@ pub enum Error {
     #[display("message integrity mismatch")]
     IntegrityMismatch,
 
+    /// Non-Allocate request uses a different username than the one that created
+    /// the [allocation].
+    ///
+    /// See [RFC 5766 Section 4][1].
+    ///
+    /// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
+    /// [1]: https://tools.ietf.org/html/rfc5766#section-4
+    #[display("wrong credentials for allocation")]
+    WrongCredentials,
+
     /// [DONT-FRAGMENT][1] attribute is not supported.
     ///
     /// [1]: https://tools.ietf.org/html/rfc5766#section-14.8
@@ -315,6 +325,13 @@ pub enum Error {
     #[display("no allocation found")]
     NoAllocationFound,
 
+    /// Operation on an [allocation] whose relay lifetime has ended or was
+    /// explicitly torn down.
+    ///
+    /// [allocation]: https://tools.ietf.org/html/rfc5766#section-5
+    #[display("allocation is inactive")]
+    AllocationInactive,
+
     /// The specified protocol is not supported.
     #[display("allocation requested unsupported proto")]
     UnsupportedRelayProto,
@@ -325,11 +342,6 @@ pub enum Error {
     /// [1]: https://tools.ietf.org/html/rfc5766#section-10.2
     #[display("unable to handle send-indication, no permission added")]
     NoPermission,
-
-    /// Failed to handle channel data, since there is no binding for the
-    /// provided channel.
-    #[display("no such channel bind")]
-    NoSuchChannelBind,
 
     /// Failed to encode message.
     #[display("Failed to encode STUN/TURN message: {_0:?}")]

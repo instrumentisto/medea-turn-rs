@@ -18,7 +18,7 @@ use stun_codec::{
     rfc5766::{
         errors::{
             AllocationMismatch, InsufficientCapacity,
-            UnsupportedTransportProtocol,
+            UnsupportedTransportProtocol, WrongCredentials,
         },
         methods::{ALLOCATE, CHANNEL_BIND, CREATE_PERMISSION, REFRESH, SEND},
     },
@@ -26,11 +26,9 @@ use stun_codec::{
 };
 use tokio::time::{Duration, Instant};
 
-#[cfg(doc)]
-use crate::allocation::Allocation;
 use crate::{
     AuthHandler, Error, TurnConfig,
-    allocation::{FiveTuple, Manager, ManagerConfig},
+    allocation::{Allocation, FiveTuple, Manager, ManagerConfig},
     attr::{
         AddressFamily, Attribute, ChannelNumber, Data, DontFragment, ErrorCode,
         EvenPort, Fingerprint, Lifetime, MessageIntegrity, Nonce, PROTO_UDP,
@@ -39,19 +37,9 @@ use crate::{
         XorRelayAddress,
     },
     chandata::ChannelData,
-    server::DEFAULT_LIFETIME,
+    server::{DEFAULT_ALLOC_LIFETIME, MAX_ALLOC_LIFETIME},
     transport::{Request, Transport},
 };
-
-/// Maximum allowed lifetime of an [allocation][1].
-///
-/// See [RFC 5766 Section 6.2][2]:
-/// > It is RECOMMENDED that the server use a maximum allowed lifetime value of
-/// > no more than 3600 seconds (1 hour).
-///
-/// [1]: https://tools.ietf.org/html/rfc5766#section-2.2
-/// [2]: https://tools.ietf.org/html/rfc5766#section-6.2
-const MAXIMUM_ALLOCATION_LIFETIME: Duration = Duration::from_secs(3600);
 
 /// Lifetime of a [`Nonce`] sent by a server.
 const NONCE_LIFETIME: Duration = Duration::from_secs(3600);
@@ -72,7 +60,7 @@ pub(crate) async fn handle<Auth: AuthHandler>(
     match req {
         Request::ChannelData(data) => {
             if let Some(turn) = turn {
-                handle_data_packet(data, five_tuple, &turn.alloc).await
+                handle_channel_data(data, five_tuple, &turn.alloc).await
             } else {
                 log::warn!(
                     "Received a `ChannelData` message, but TURN is disabled",
@@ -162,25 +150,32 @@ pub(crate) async fn handle<Auth: AuthHandler>(
 ///
 /// - With an [`Error::NoAllocationFound`] if there is no [`Allocation`] found
 ///   for the provided [`FiveTuple`].
-/// - With an [`Error::NoSuchChannelBind`] if the there is no channel in the
-///   [`Allocation`] for the provided [`ChannelData::num()`].
 /// - Or if fails to relay the provided `data`.
-async fn handle_data_packet(
+async fn handle_channel_data(
     data: ChannelData,
     five_tuple: FiveTuple,
     allocs: &Manager,
 ) -> Result<(), Error> {
-    if let Some(alloc) = allocs.get_alloc(&five_tuple) {
-        let channel = alloc.get_channel_addr(&data.num()).await;
-        if let Some(peer) = channel {
-            alloc.relay(&data.data(), peer).await?;
-            Ok(())
-        } else {
-            Err(Error::NoSuchChannelBind)
-        }
-    } else {
-        Err(Error::NoAllocationFound)
-    }
+    log::trace!("Received `ChannelData` for {five_tuple}");
+
+    // For all TURN messages (including `ChannelData`) EXCEPT an `Allocate`
+    // request, if the 5-tuple does not identify an existing allocation, then
+    // the message MUST either be rejected with a 437 (Allocation Mismatch)
+    // error (if it is a request) or silently ignored (if it is an indication or
+    // a `ChannelData` message).
+    let Some(alloc) = allocs.get_alloc(&five_tuple) else {
+        log::trace!("Could not find `Allocation` for {five_tuple}");
+        return Ok(());
+    };
+
+    let Some(peer) = alloc.get_channel_addr(&data.num()).await else {
+        // If the `ChannelData` message is received on a channel that is not
+        // bound to any peer, then the message is silently discarded.
+        log::trace!("`ChannelData` not bound to any peer");
+        return Ok(());
+    };
+
+    alloc.relay(&data.data(), peer).await
 }
 
 /// Handles the provided [STUN] [`Message`] as an [Allocate request][1].
@@ -257,7 +252,19 @@ async fn handle_allocate_request(
             ALLOCATE,
             msg.transaction_id(),
         );
-        msg.add_attribute(ErrorCode::from(UnknownAttribute));
+        let err_code = ErrorCode::from(UnknownAttribute);
+
+        log::trace!(
+            "Sending error response to {}: method={:?} transaction_id={:?} \
+             code={} reason={}",
+            five_tuple.src_addr,
+            msg.method(),
+            msg.transaction_id(),
+            err_code.code(),
+            err_code.reason_phrase(),
+        );
+
+        msg.add_attribute(err_code);
         msg.add_attribute(UnknownAttributes::new(vec![
             DontFragment.get_type(),
         ]));
@@ -318,7 +325,7 @@ async fn handle_allocate_request(
 
     // 6. The server checks if the request contains an EVEN-PORT attribute. If
     //    yes, then the server checks that it can satisfy the request (i.e., can
-    //    allocate a relayed transport address as described below).  If the
+    //    allocate a relayed transport address as described below). If the
     //    server cannot satisfy the request, then the server rejects the request
     //    with a 508 (Insufficient Capacity) error.
     if even_port.is_some() {
@@ -344,24 +351,24 @@ async fn handle_allocate_request(
         requested_port = random_port;
     }
 
-    // 7. At any point, the server MAY choose to reject the request with a 486
-    //    (Allocation Quota Reached) error if it feels the client is trying to
-    //    exceed some locally defined allocation quota.  The server is free to
-    //    define this allocation quota any way it wishes, but SHOULD define it
-    //    based on the username used to authenticate the request, and not on the
-    //    client's transport address.
-
-    // 8. Also at any point, the server MAY choose to reject the request with a
-    //    300 (Try Alternate) error if it wishes to redirect the client to a
-    //    different server.  The use of this error code and attribute follow the
-    //    specification in [RFC5389].
-    let lifetime_duration = get_lifetime(&msg);
+    // If the request contains a `LIFETIME` attribute, then the server computes
+    // the minimum of the client's proposed lifetime and the server's maximum
+    // allowed lifetime. If this computed value is greater than the default
+    // lifetime, then the server uses the computed lifetime as the initial value
+    // of the time-to-expiry field. Otherwise, the server uses the default
+    // lifetime. It is RECOMMENDED that the server use a maximum allowed
+    // lifetime value of no more than 3600 seconds (1 hour).
+    let lifetime = msg
+        .get_attribute::<Lifetime>()
+        .map_or(DEFAULT_ALLOC_LIFETIME, Lifetime::lifetime)
+        .min(MAX_ALLOC_LIFETIME)
+        .max(DEFAULT_ALLOC_LIFETIME);
     let relay_addr = match allocs
         .create_allocation(
             five_tuple,
             Arc::clone(conn),
             requested_port,
-            lifetime_duration,
+            lifetime,
             creds.uname.clone(),
             use_ipv4,
         )
@@ -369,13 +376,13 @@ async fn handle_allocate_request(
     {
         Ok(a) => a,
         Err(err) => {
-            respond_with_err(
-                &msg,
-                InsufficientCapacity,
-                conn,
-                five_tuple.src_addr,
-            )
-            .await;
+            let stun_err = if matches!(err, Error::DupeFiveTuple) {
+                ErrorCode::from(AllocationMismatch)
+            } else {
+                ErrorCode::from(InsufficientCapacity)
+            };
+
+            respond_with_err(&msg, stun_err, conn, five_tuple.src_addr).await;
 
             return Err(err);
         }
@@ -400,8 +407,7 @@ async fn handle_allocate_request(
 
         msg.add_attribute(XorRelayAddress::new(relay_addr));
         msg.add_attribute(
-            Lifetime::new(lifetime_duration)
-                .map_err(|e| Error::Encode(*e.kind()))?,
+            Lifetime::new(lifetime).map_err(|e| Error::Encode(*e.kind()))?,
         );
         msg.add_attribute(XorMappedAddress::new(five_tuple.src_addr));
         msg.add_attribute(creds.integrity(&msg)?);
@@ -462,7 +468,7 @@ async fn authenticate_request<Auth: AuthHandler>(
     turn_ctx: &mut TurnCtx<Auth>,
 ) -> Result<Option<LongTermCredentials>, Error> {
     let Some(integrity) = msg.get_attribute::<MessageIntegrity>() else {
-        respond_with_nonce(
+        respond_with_err_with_nonce(
             msg,
             ErrorCode::from(Unauthorized),
             conn,
@@ -497,7 +503,7 @@ async fn authenticate_request<Auth: AuthHandler>(
     };
 
     if stale_nonce {
-        respond_with_nonce(
+        respond_with_err_with_nonce(
             msg,
             ErrorCode::from(StaleNonce),
             conn,
@@ -554,7 +560,7 @@ async fn handle_binding_request(
     conn: &Arc<dyn Transport + Send + Sync>,
     five_tuple: FiveTuple,
 ) -> Result<(), Error> {
-    log::trace!("Received `BindingRequest` from {}", five_tuple.src_addr);
+    log::trace!("Received `BindingRequest` for {five_tuple}");
 
     let mut msg = Message::new(
         MessageClass::SuccessResponse,
@@ -583,12 +589,33 @@ async fn handle_refresh_request(
     five_tuple: FiveTuple,
     creds: LongTermCredentials,
 ) -> Result<(), Error> {
-    log::trace!("Received `RefreshRequest` from {}", five_tuple.src_addr);
+    log::trace!("Received `RefreshRequest` for {five_tuple}");
 
-    let lifetime_duration = get_lifetime(&msg);
-    if lifetime_duration == Duration::from_secs(0) {
-        allocs.delete_allocation(&five_tuple);
-    } else if let Some(a) = allocs.get_alloc(&five_tuple) {
+    let alloc =
+        get_alloc_for_uname(&msg, conn, allocs, five_tuple, &creds).await?;
+
+    // The server computes a value called the "desired lifetime" as follows:
+    // - If the request contains a `LIFETIME` attribute and the attribute value
+    //   is 0, then the "desired lifetime" is 0.
+    // - Otherwise, if the request contains a `LIFETIME` attribute, then the
+    //   server computes the minimum of the client's requested lifetime and the
+    //   server's maximum allowed lifetime. If this computed value is greater
+    //   than the default lifetime, then the "desired lifetime" is the computed
+    //   value.
+    // - Otherwise, the "desired lifetime" is the default lifetime.
+    let lifetime = match msg.get_attribute::<Lifetime>().map(Lifetime::lifetime)
+    {
+        None => Some(DEFAULT_ALLOC_LIFETIME),
+        Some(l) if l.is_zero() => None,
+        Some(l) => Some(l.min(MAX_ALLOC_LIFETIME).max(DEFAULT_ALLOC_LIFETIME)),
+    };
+
+    // Subsequent processing depends on the "desired lifetime" value:
+    // - If the "desired lifetime" is 0, then the request succeeds and the
+    //   allocation is deleted.
+    // - If the "desired lifetime" is non-zero, then the request succeeds and
+    //   the allocation's time-to-expiry is set to the "desired lifetime".
+    if let Some(lifetime) = lifetime {
         // If a server receives a Refresh Request with a
         // REQUESTED-ADDRESS-FAMILY attribute, and the
         // attribute's value doesn't match the address
@@ -599,8 +626,9 @@ async fn handle_refresh_request(
             .get_attribute::<RequestedAddressFamily>()
             .map(RequestedAddressFamily::address_family)
         {
-            if (family == AddressFamily::V6 && !a.relay_addr().is_ipv6())
-                || (family == AddressFamily::V4 && !a.relay_addr().is_ipv4())
+            if (family == AddressFamily::V6 && !alloc.relay_addr().is_ipv6())
+                || (family == AddressFamily::V4
+                    && !alloc.relay_addr().is_ipv4())
             {
                 respond_with_err(
                     &msg,
@@ -613,9 +641,9 @@ async fn handle_refresh_request(
                 return Err(Error::PeerAddressFamilyMismatch);
             }
         }
-        a.refresh(lifetime_duration).await;
+        alloc.refresh(lifetime).await;
     } else {
-        return Err(Error::NoAllocationFound);
+        allocs.delete_allocation(&five_tuple);
     }
 
     let mut msg = Message::new(
@@ -624,7 +652,7 @@ async fn handle_refresh_request(
         msg.transaction_id(),
     );
     msg.add_attribute(
-        Lifetime::new(lifetime_duration)
+        Lifetime::new(lifetime.unwrap_or(Duration::ZERO))
             .map_err(|e| Error::Encode(*e.kind()))?,
     );
     msg.add_attribute(creds.integrity(&msg)?);
@@ -646,11 +674,10 @@ async fn handle_create_permission_request(
     five_tuple: FiveTuple,
     creds: LongTermCredentials,
 ) -> Result<(), Error> {
-    log::trace!("Received `CreatePermission` from {}", five_tuple.src_addr);
+    log::trace!("Received `CreatePermission` for {five_tuple}");
 
-    let Some(alloc) = allocs.get_alloc(&five_tuple) else {
-        return Err(Error::NoAllocationFound);
-    };
+    let alloc =
+        get_alloc_for_uname(&msg, conn, allocs, five_tuple, &creds).await?;
 
     let mut add_count = 0;
 
@@ -684,14 +711,20 @@ async fn handle_create_permission_request(
         add_count += 1;
     }
 
-    let resp_class = if add_count > 0 {
-        MessageClass::SuccessResponse
-    } else {
-        MessageClass::ErrorResponse
-    };
+    // The `CreatePermission` request MUST contain at least one
+    // `XOR-PEER-ADDRESS` attribute and MAY contain multiple such attributes. If
+    // no such attribute exists, or if any of these attributes are invalid, then
+    // a 400 (Bad Request) error is returned.
+    if add_count == 0 {
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
+        return Err(Error::AttributeNotFound);
+    }
 
-    let mut msg =
-        Message::new(resp_class, CREATE_PERMISSION, msg.transaction_id());
+    let mut msg = Message::new(
+        MessageClass::SuccessResponse,
+        CREATE_PERMISSION,
+        msg.transaction_id(),
+    );
     msg.add_attribute(creds.integrity(&msg)?);
 
     Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
@@ -709,24 +742,84 @@ async fn handle_send_indication(
     allocs: &Manager,
     five_tuple: FiveTuple,
 ) -> Result<(), Error> {
-    log::trace!("Received `SendIndication` from {}", five_tuple.src_addr);
+    log::trace!("Received `SendIndication` for {five_tuple}");
 
+    // For all TURN messages (including `ChannelData`) EXCEPT an `Allocate`
+    // request, if the 5-tuple does not identify an existing allocation, then
+    // the message MUST either be rejected with a 437 (Allocation Mismatch)
+    // error (if it is a request) or silently ignored (if it is an indication or
+    // a `ChannelData` message).
     let Some(a) = allocs.get_alloc(&five_tuple) else {
-        return Err(Error::NoAllocationFound);
+        log::trace!("Could not find `Allocation` for `SendIndication`");
+        return Ok(());
     };
 
-    let data_attr =
-        msg.get_attribute::<Data>().ok_or(Error::AttributeNotFound)?;
-    let peer_address = msg
-        .get_attribute::<XorPeerAddress>()
-        .map(XorPeerAddress::address)
-        .ok_or(Error::AttributeNotFound)?;
+    // The `Send` indication MUST contain both an `XOR-PEER-ADDRESS` attribute
+    // and a `DATA` attribute. If one of these attributes is missing or invalid,
+    // then the message is discarded. Note, that the `DATA` attribute is allowed
+    // to contain zero bytes of data.
+    let Some(data_attr) = msg.get_attribute::<Data>() else {
+        log::trace!("`SendIndication` has no data");
+        return Ok(());
+    };
+    let Some(peer_address) =
+        msg.get_attribute::<XorPeerAddress>().map(XorPeerAddress::address)
+    else {
+        log::trace!("`SendIndication` has no `XorPeerAddress`");
+        return Ok(());
+    };
 
+    // The server also checks that there is a permission installed for the IP
+    // address contained in the `XOR-PEER-ADDRESS` attribute. If no such
+    // permission exists, the message is discarded.
     if !a.has_permission(&peer_address).await {
-        return Err(Error::NoPermission);
+        log::trace!("`SendIndication` has permission for {peer_address}");
+        return Ok(());
     }
 
     a.relay(data_attr.data(), peer_address).await
+}
+
+/// Returns the [`Allocation`] matching the provided [`FiveTuple`] and
+/// [`LongTermCredentials`] [`Username`].
+///
+/// Sends an [`AllocationMismatch`] [`MessageClass::ErrorResponse`] if failed
+/// to find [`Allocation`] with the provided [`FiveTuple`].
+///
+/// Sends a [`WrongCredentials`] [`MessageClass::ErrorResponse`] on [`Username`]
+/// mismatch.
+async fn get_alloc_for_uname<'a>(
+    msg: &Message<Attribute>,
+    conn: &Arc<dyn Transport + Send + Sync>,
+    allocs: &'a Manager,
+    five_tuple: FiveTuple,
+    creds: &LongTermCredentials,
+) -> Result<&'a Allocation, Error> {
+    // When a TURN message arrives at the server from the client, the server
+    // uses the 5-tuple in the message to identify the associated allocation.
+    // For all TURN messages (including `ChannelData`) EXCEPT an `Allocate`
+    // request, if the 5-tuple does not identify an existing allocation, then
+    // the message MUST either be rejected with a 437 (Allocation Mismatch)
+    // error (if it is a request) or silently ignored (if it is an indication or
+    // a `ChannelData` message).
+    let Some(alloc) = allocs.get_alloc(&five_tuple) else {
+        respond_with_err(msg, AllocationMismatch, conn, five_tuple.src_addr)
+            .await;
+
+        return Err(Error::NoAllocationFound);
+    };
+
+    // if the 5-tuple identifies an existing allocation, but the request does
+    // not use the same username as used to create the allocation, then the
+    // request MUST be rejected with a 441 (Wrong Credentials) error.
+    if creds.uname.name() != alloc.username().name() {
+        respond_with_err(msg, WrongCredentials, conn, five_tuple.src_addr)
+            .await;
+
+        return Err(Error::WrongCredentials);
+    }
+
+    Ok(alloc)
 }
 
 /// Handles the provided [`Message`] as a [ChannelBind Request][1].
@@ -744,61 +837,65 @@ async fn handle_channel_bind_request(
     channel_bind_lifetime: Duration,
     creds: LongTermCredentials,
 ) -> Result<(), Error> {
-    if let Some(alloc) = allocs.get_alloc(&five_tuple) {
-        let Some(ch_num) =
-            msg.get_attribute::<ChannelNumber>().map(|a| a.value())
-        else {
-            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
+    let alloc =
+        get_alloc_for_uname(&msg, conn, allocs, five_tuple, &creds).await?;
 
-            return Err(Error::AttributeNotFound);
-        };
-        let Some(peer_addr) =
-            msg.get_attribute::<XorPeerAddress>().map(XorPeerAddress::address)
-        else {
-            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
+    let Some(ch_num) = msg.get_attribute::<ChannelNumber>().map(|a| a.value())
+    else {
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
-            return Err(Error::AttributeNotFound);
-        };
+        return Err(Error::AttributeNotFound);
+    };
+    let Some(peer_addr) =
+        msg.get_attribute::<XorPeerAddress>().map(XorPeerAddress::address)
+    else {
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
-        // If the XOR-PEER-ADDRESS attribute contains an address of an address
-        // family different than that of the relayed transport address for the
-        // allocation, the server MUST generate an error response with the 443
-        // (Peer Address Family Mismatch) response code. [RFC 6156, Section 7.2]
-        if (peer_addr.is_ipv4() && !alloc.relay_addr().is_ipv4())
-            || (peer_addr.is_ipv6() && !alloc.relay_addr().is_ipv6())
-        {
-            respond_with_err(
-                &msg,
-                PeerAddressFamilyMismatch,
-                conn,
-                five_tuple.src_addr,
-            )
-            .await;
+        return Err(Error::AttributeNotFound);
+    };
 
-            return Err(Error::PeerAddressFamilyMismatch);
-        }
+    // Port 0 is not meaningful, so reject it explicitly.
+    if peer_addr.port() == 0 {
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
 
-        log::trace!("Binding channel {ch_num} to {peer_addr}");
-
-        if let Err(e) = alloc
-            .add_channel_bind(ch_num, peer_addr, channel_bind_lifetime)
-            .await
-        {
-            respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
-            return Err(e);
-        }
-
-        let mut msg = Message::new(
-            MessageClass::SuccessResponse,
-            CHANNEL_BIND,
-            msg.transaction_id(),
-        );
-        msg.add_attribute(creds.integrity(&msg)?);
-
-        Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
-    } else {
-        Err(Error::NoAllocationFound)
+        return Err(Error::AttributeNotFound);
     }
+
+    // If the `XOR-PEER-ADDRESS` attribute contains an address of an address
+    // family different than that of the relayed transport address for the
+    // allocation, the server MUST generate an error response with the 443
+    // (Peer Address Family Mismatch) response code. [RFC 6156, Section 7.2]
+    if (peer_addr.is_ipv4() && !alloc.relay_addr().is_ipv4())
+        || (peer_addr.is_ipv6() && !alloc.relay_addr().is_ipv6())
+    {
+        respond_with_err(
+            &msg,
+            PeerAddressFamilyMismatch,
+            conn,
+            five_tuple.src_addr,
+        )
+        .await;
+
+        return Err(Error::PeerAddressFamilyMismatch);
+    }
+
+    log::trace!("Binding channel {ch_num} to {peer_addr}");
+
+    if let Err(e) =
+        alloc.add_channel_bind(ch_num, peer_addr, channel_bind_lifetime).await
+    {
+        respond_with_err(&msg, BadRequest, conn, five_tuple.src_addr).await;
+        return Err(e);
+    }
+
+    let mut msg = Message::new(
+        MessageClass::SuccessResponse,
+        CHANNEL_BIND,
+        msg.transaction_id(),
+    );
+    msg.add_attribute(creds.integrity(&msg)?);
+
+    Ok(conn.send_msg_to(msg, five_tuple.src_addr).await?)
 }
 
 /// Responds to the provided [`Message`] with a [`MessageClass::ErrorResponse`]
@@ -807,7 +904,7 @@ async fn handle_channel_bind_request(
 /// # Errors
 ///
 /// See the [`Error`] for details.
-async fn respond_with_nonce(
+async fn respond_with_err_with_nonce(
     msg: &Message<Attribute>,
     response_code: ErrorCode,
     conn: &Arc<dyn Transport + Send + Sync>,
@@ -822,6 +919,16 @@ async fn respond_with_nonce(
         .collect();
 
     _ = nonces.insert(nonce.clone(), Instant::now());
+
+    log::trace!(
+        "Sending error response (with nonce) to {}: method={:?} \
+         transaction_id={:?} code={} reason={}",
+        five_tuple.src_addr,
+        msg.method(),
+        msg.transaction_id(),
+        response_code.code(),
+        response_code.reason_phrase(),
+    );
 
     let mut msg = Message::new(
         MessageClass::ErrorResponse,
@@ -849,30 +956,22 @@ async fn respond_with_err(
     conn: &Arc<dyn Transport + Send + Sync>,
     dst: SocketAddr,
 ) {
+    let code = err.into();
+    log::trace!(
+        "Sending error response to {dst}: method={:?} \
+         code={} reason={}",
+        req.method(),
+        code.code(),
+        code.reason_phrase(),
+    );
     let mut err_msg = Message::new(
         MessageClass::ErrorResponse,
         req.method(),
         req.transaction_id(),
     );
-    err_msg.add_attribute(err.into());
+    err_msg.add_attribute(code);
 
     drop(conn.send_msg_to(err_msg, dst).await);
-}
-
-/// Calculates a [`Lifetime`], fetching it from the provided [`Message`] and
-/// ensuring that it's not greater than the configured
-/// [`MAXIMUM_ALLOCATION_LIFETIME`].
-fn get_lifetime(m: &Message<Attribute>) -> Duration {
-    m.get_attribute::<Lifetime>().map(Lifetime::lifetime).map_or(
-        DEFAULT_LIFETIME,
-        |lifetime| {
-            if lifetime > MAXIMUM_ALLOCATION_LIFETIME {
-                DEFAULT_LIFETIME
-            } else {
-                lifetime
-            }
-        },
-    )
 }
 
 /// [TURN] server context.
@@ -901,7 +1000,7 @@ pub(crate) struct TurnCtx<Auth> {
 impl<A> From<TurnConfig<A>> for TurnCtx<A> {
     fn from(mut conf: TurnConfig<A>) -> Self {
         if conf.channel_bind_lifetime == Duration::from_secs(0) {
-            conf.channel_bind_lifetime = DEFAULT_LIFETIME;
+            conf.channel_bind_lifetime = DEFAULT_ALLOC_LIFETIME;
         }
 
         Self {
@@ -912,63 +1011,6 @@ impl<A> From<TurnConfig<A>> for TurnCtx<A> {
             conf,
             nonces: HashMap::new(),
         }
-    }
-}
-
-#[cfg(test)]
-mod get_lifetime_spec {
-    use std::time::Duration;
-
-    use rand::random;
-    use stun_codec::{
-        Message, MessageClass, TransactionId, rfc5766::methods::ALLOCATE,
-    };
-
-    use super::{DEFAULT_LIFETIME, MAXIMUM_ALLOCATION_LIFETIME, get_lifetime};
-    use crate::attr::Lifetime;
-
-    #[tokio::test]
-    async fn lifetime_parsing() {
-        let lifetime = Lifetime::new(Duration::from_secs(5)).unwrap();
-
-        let mut m = Message::new(
-            MessageClass::Request,
-            ALLOCATE,
-            TransactionId::new(random()),
-        );
-        let lifetime_duration = get_lifetime(&m);
-
-        assert_eq!(
-            lifetime_duration, DEFAULT_LIFETIME,
-            "allocation lifetime should be default time duration",
-        );
-
-        m.add_attribute(lifetime.clone());
-
-        let lifetime_duration = get_lifetime(&m);
-        assert_eq!(
-            lifetime_duration,
-            lifetime.lifetime(),
-            "wrong lifetime duration",
-        );
-    }
-
-    #[tokio::test]
-    async fn lifetime_overflow() {
-        let lifetime = Lifetime::new(MAXIMUM_ALLOCATION_LIFETIME * 2).unwrap();
-
-        let mut m2 = Message::new(
-            MessageClass::Request,
-            ALLOCATE,
-            TransactionId::new(random()),
-        );
-        m2.add_attribute(lifetime);
-
-        let lifetime_duration = get_lifetime(&m2);
-        assert_eq!(
-            lifetime_duration, DEFAULT_LIFETIME,
-            "wrong lifetime duration",
-        );
     }
 }
 
@@ -1049,7 +1091,7 @@ mod handle_spec {
                 Arc::clone(&conn),
                 0,
                 Duration::from_secs(3600),
-                Username::new(String::from("user")).unwrap(),
+                Username::new(STATIC_KEY.to_owned()).unwrap(),
                 true,
             )
             .await
@@ -1062,7 +1104,7 @@ mod handle_spec {
             REFRESH,
             TransactionId::new(random()),
         );
-        m.add_attribute(Lifetime::new(Duration::default()).unwrap());
+        m.add_attribute(Lifetime::new(Duration::ZERO).unwrap());
         m.add_attribute(Nonce::new(STATIC_KEY.to_owned()).unwrap());
         m.add_attribute(Realm::new(STATIC_KEY.to_owned()).unwrap());
         m.add_attribute(Username::new(STATIC_KEY.to_owned()).unwrap());
@@ -1092,10 +1134,11 @@ mod handle_spec {
             alloc: allocation_manager,
             nonces,
         });
+        assert!(turn.as_ref().unwrap().alloc.get_alloc(&five_tuple).is_some());
         handle(Request::Message(m), &conn, five_tuple, &mut turn)
             .await
             .unwrap();
 
-        assert!(turn.unwrap().alloc.get_alloc(&five_tuple).is_none());
+        assert!(turn.as_ref().unwrap().alloc.get_alloc(&five_tuple).is_none());
     }
 }

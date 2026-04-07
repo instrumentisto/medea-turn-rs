@@ -6,6 +6,31 @@ All user visible changes to this project will be documented in this file. This p
 
 
 
+## [0.13.0] · 2026-??-??
+[0.13.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.13.0
+
+[Diff](https://github.com/instrumentisto/medea-turn-rs/compare/v0.12.0...v0.13.0)
+
+### BC Breaks
+
+- Removed `Error::NoSuchChannelBind` variant. ([#71])
+
+### Added
+
+- `WrongCredentials` and `AllocationInactive` variants to `Error`. ([#71])
+
+### Fixed
+
+- Non-`Allocate` requests on an unknown 5-tuple now respond with 437 (Allocation Mismatch) error. ([#71])
+- Non-`Allocate` requests, authenticated with a different username than the one that created the allocation, now respond with 441 (Wrong Credentials) error. ([#71])
+- `Allocate` request for an already-allocated 5-tuple now responds with 437 (Allocation Mismatch) error. ([#71])
+- `CreatePermission` request with no `XOR-PEER-ADDRESS` attributes now responds with 400 (Bad Request) error. ([#71])
+
+[#71]: https://github.com/instrumentisto/medea-turn-rs/pull/71
+
+
+
+
 ## [0.12.0] · 2025-07-17
 [0.12.0]: https://github.com/instrumentisto/medea-turn-rs/tree/v0.12.0
 

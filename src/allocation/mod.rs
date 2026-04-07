@@ -165,6 +165,11 @@ impl Allocation {
         this
     }
 
+    /// [`Username`] that this [`Allocation`] was created with.
+    pub(crate) const fn username(&self) -> &Username {
+        &self.username
+    }
+
     /// Indicates whether the underlying relay socket and transmission loop is
     /// alive.
     pub(crate) fn is_alive(&self) -> bool {
@@ -175,7 +180,7 @@ impl Allocation {
     ///
     /// # Errors
     ///
-    /// - With an [`Error::NoAllocationFound`] if this [`Allocation`] is dead.
+    /// - With an [`Error::AllocationInactive`] if this [`Allocation`] is dead.
     /// - With a [`transport::Error`] if failed to send the `data`.
     pub(crate) async fn relay(
         &self,
@@ -183,7 +188,7 @@ impl Allocation {
         to: SocketAddr,
     ) -> Result<(), Error> {
         if !self.is_alive() {
-            return Err(Error::NoAllocationFound);
+            return Err(Error::AllocationInactive);
         }
 
         let n = self
@@ -237,7 +242,7 @@ impl Allocation {
         lifetime: Duration,
     ) -> Result<(), Error> {
         if !self.is_alive() {
-            return Err(Error::NoAllocationFound);
+            return Err(Error::AllocationInactive);
         }
 
         // The `ChannelNumber` is not currently bound to a different transport
@@ -516,7 +521,7 @@ mod spec {
     use super::{Allocation, FiveTuple};
     use crate::{
         attr::{ChannelNumber, PROTO_UDP, Username},
-        server::DEFAULT_LIFETIME,
+        server::DEFAULT_ALLOC_LIFETIME,
     };
 
     impl Default for FiveTuple {
@@ -539,7 +544,7 @@ mod spec {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
-            DEFAULT_LIFETIME,
+            DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -572,7 +577,7 @@ mod spec {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
-            DEFAULT_LIFETIME,
+            DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -594,14 +599,14 @@ mod spec {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
-            DEFAULT_LIFETIME,
+            DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
         );
 
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
 
-        a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_LIFETIME)
+        a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_ALLOC_LIFETIME)
             .await
             .unwrap();
 
@@ -624,7 +629,7 @@ mod spec {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
-            DEFAULT_LIFETIME,
+            DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
         );
@@ -632,7 +637,7 @@ mod spec {
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
         let addr2 = SocketAddr::from_str("127.0.0.1:3479").unwrap();
 
-        a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_LIFETIME)
+        a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_ALLOC_LIFETIME)
             .await
             .unwrap();
 
@@ -653,13 +658,13 @@ mod spec {
             relay_socket,
             relay_addr,
             FiveTuple::default(),
-            DEFAULT_LIFETIME,
+            DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
         );
 
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
-        a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_LIFETIME)
+        a.add_channel_bind(ChannelNumber::MIN, addr, DEFAULT_ALLOC_LIFETIME)
             .await
             .unwrap();
         a.add_permission(addr.ip()).await;
