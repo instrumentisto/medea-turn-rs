@@ -83,7 +83,6 @@ impl Manager {
         &mut self,
         five_tuple: FiveTuple,
         turn_socket: DynTransport,
-        requested_port: u16,
         lifetime: Duration,
         username: Username,
         use_ipv4: bool,
@@ -99,10 +98,8 @@ impl Manager {
             return Err(Error::DupeFiveTuple);
         }
 
-        let (relay_socket, relay_addr) = self
-            .relay_allocator
-            .allocate_conn(use_ipv4, requested_port)
-            .await?;
+        let (relay_socket, relay_addr, guard) =
+            self.relay_allocator.allocate_conn(use_ipv4).await?;
         let alloc = Allocation::new(
             turn_socket,
             relay_socket,
@@ -111,6 +108,7 @@ impl Manager {
             lifetime,
             username,
             self.alloc_close_notify.clone(),
+            guard,
         );
 
         drop(self.allocations.insert(five_tuple, alloc));
@@ -141,18 +139,6 @@ impl Manager {
         self.allocations
             .retain(|_, allocation| allocation.username.name() != username);
     }
-
-    /// Returns a random non-allocated UDP port.
-    ///
-    /// # Errors
-    ///
-    /// If new port fails to be allocated. See the [`Error`] for details.
-    pub(crate) async fn get_random_even_port(&self) -> Result<u16, Error> {
-        self.relay_allocator
-            .allocate_conn(true, 0)
-            .await
-            .map(|(_, addr)| addr.port())
-    }
 }
 
 #[cfg(test)]
@@ -181,13 +167,13 @@ mod spec {
     /// Creates a new [`Manager`] for testing purposes.
     fn create_manager() -> Manager {
         let config = Config {
-            relay_addr_generator: relay::Allocator {
-                relay_address: IpAddr::from([127, 0, 0, 1]),
-                min_port: 49152,
-                max_port: 65535,
-                max_retries: 10,
-                address: String::from("127.0.0.1"),
-            },
+            relay_addr_generator: relay::Allocator::new(
+                IpAddr::from([127, 0, 0, 1]),
+                String::from("127.0.0.1"),
+                49152,
+                65535,
+                1,
+            ),
             alloc_close_notify: None,
         };
         Manager::new(config)
@@ -238,7 +224,6 @@ mod spec {
             .create_allocation(
                 five_tuple,
                 Arc::new(turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
@@ -320,7 +305,6 @@ mod spec {
             .create_allocation(
                 five_tuple,
                 DynTransport::clone(&turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
@@ -332,7 +316,6 @@ mod spec {
             .create_allocation(
                 five_tuple,
                 DynTransport::clone(&turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
@@ -353,7 +336,6 @@ mod spec {
             .create_allocation(
                 five_tuple,
                 DynTransport::clone(&turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
@@ -389,7 +371,6 @@ mod spec {
                 .create_allocation(
                     five_tuple,
                     DynTransport::clone(&turn_socket),
-                    0,
                     lifetime,
                     Username::new(String::from("user")).unwrap(),
                     true,
@@ -437,7 +418,6 @@ mod spec {
             .create_allocation(
                 five_tuple1,
                 DynTransport::clone(&turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
@@ -448,7 +428,6 @@ mod spec {
             .create_allocation(
                 five_tuple2,
                 DynTransport::clone(&turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user")).unwrap(),
                 true,
@@ -459,7 +438,6 @@ mod spec {
             .create_allocation(
                 five_tuple3,
                 DynTransport::clone(&turn_socket),
-                0,
                 DEFAULT_ALLOC_LIFETIME,
                 Username::new(String::from("user2")).unwrap(),
                 true,

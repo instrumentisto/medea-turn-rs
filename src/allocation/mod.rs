@@ -36,6 +36,7 @@ use crate::{
     allocation::permission::PERMISSION_LIFETIME,
     attr::{Attribute, Data, Username, XorPeerAddress},
     chandata::ChannelData,
+    relay,
     server::INBOUND_MTU,
     transport,
 };
@@ -137,6 +138,10 @@ pub(crate) struct Allocation {
 
 impl Allocation {
     /// Creates a new [`Allocation`] out of the provided parameters.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "no such thing as too many arguments"
+    )]
     pub(crate) fn new(
         turn_socket: Arc<dyn Transport + Send + Sync>,
         relay_socket: Arc<UdpSocket>,
@@ -145,6 +150,7 @@ impl Allocation {
         lifetime: Duration,
         username: Username,
         alloc_close_notify: Option<mpsc::Sender<Info>>,
+        port_guard: relay::PortGuard,
     ) -> Self {
         let (refresh_tx, refresh_rx) = mpsc::channel(1);
 
@@ -160,7 +166,7 @@ impl Allocation {
             alloc_close_notify,
         };
 
-        this.spawn_relay_handler(refresh_rx, lifetime, turn_socket);
+        this.spawn_relay_handler(refresh_rx, lifetime, turn_socket, port_guard);
 
         this
     }
@@ -353,6 +359,7 @@ impl Allocation {
         mut refresh_rx: mpsc::Receiver<Duration>,
         lifetime: Duration,
         turn_socket: Arc<dyn Transport + Send + Sync>,
+        port_guard: relay::PortGuard,
     ) {
         let five_tuple = self.five_tuple;
         let relay_addr = self.relay_addr;
@@ -483,6 +490,7 @@ impl Allocation {
 
             drop(mem::take(&mut *channel_bindings.lock().await));
             drop(mem::take(&mut *permissions.lock().await));
+            drop(port_guard);
 
             log::trace!(
                 "`Allocation(five_tuple: {five_tuple})` stopped, stop \
@@ -521,6 +529,7 @@ mod spec {
     use super::{Allocation, FiveTuple};
     use crate::{
         attr::{ChannelNumber, PROTO_UDP, Username},
+        relay,
         server::DEFAULT_ALLOC_LIFETIME,
     };
 
@@ -547,6 +556,7 @@ mod spec {
             DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
+            relay::PortGuard::dummy(),
         );
 
         let addr1 = SocketAddr::from_str("127.0.0.1:3478").unwrap();
@@ -580,6 +590,7 @@ mod spec {
             DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
+            relay::PortGuard::dummy(),
         );
 
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
@@ -602,6 +613,7 @@ mod spec {
             DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
+            relay::PortGuard::dummy(),
         );
 
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
@@ -632,6 +644,7 @@ mod spec {
             DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
+            relay::PortGuard::dummy(),
         );
 
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();
@@ -661,6 +674,7 @@ mod spec {
             DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
+            relay::PortGuard::dummy(),
         );
 
         let addr = SocketAddr::from_str("127.0.0.1:3478").unwrap();

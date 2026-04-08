@@ -233,6 +233,11 @@ pub enum Error {
     #[display("turn: max retries exceeded")]
     MaxRetriesExceeded,
 
+    /// All relay ports in the configured range are currently in use; no port
+    /// could be allocated.
+    #[display("turn: all relay ports exhausted")]
+    PortsExhausted,
+
     /// {eer address is part of a different address family than that of the
     /// relayed transport address of the allocation.
     #[display("error code 443: peer address family mismatch")]
@@ -301,6 +306,12 @@ pub enum Error {
     /// [1]: https://tools.ietf.org/html/rfc5766#section-14.8
     #[display("no support for DONT-FRAGMENT")]
     NoDontFragmentSupport,
+
+    /// [EVEN-PORT][1] attribute is not supported.
+    ///
+    /// [1]: https://datatracker.ietf.org/doc/html/rfc5766#section-14.6
+    #[display("no support for EVEN-PORT")]
+    NoEvenPortSupport,
 
     /// Allocation request cannot have both [RESERVATION-TOKEN][1] and
     /// [EVEN-PORT][2].

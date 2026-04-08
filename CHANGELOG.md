@@ -14,10 +14,18 @@ All user visible changes to this project will be documented in this file. This p
 ### BC Breaks
 
 - Removed `Error::NoSuchChannelBind` variant. ([#71])
+- `Allocator` fields are no longer public, use `Allocator::new()` constructor instead. ([#72])
 
 ### Added
 
 - `WrongCredentials` and `AllocationInactive` variants to `Error`. ([#71])
+- `PortsExhausted` and `NoEvenPortSupport` variants to `Error`. ([#71])
+- `Error::PortsExhausted` variant, returned when all ports in the relay range are in use. ([#72])
+- `Allocator::new()` constructor. ([#72])
+
+### Changed
+
+- Rework relay port selection algorithm to fix possibility of premature port exhaustion. ([#72])
 
 ### Fixed
 
@@ -27,6 +35,7 @@ All user visible changes to this project will be documented in this file. This p
 - `CreatePermission` request with no `XOR-PEER-ADDRESS` attributes now responds with 400 (Bad Request) error. ([#71])
 
 [#71]: https://github.com/instrumentisto/medea-turn-rs/pull/71
+[#72]: https://github.com/instrumentisto/medea-turn-rs/pull/72
 
 
 
