@@ -138,10 +138,8 @@ pub(crate) struct Allocation {
 
 impl Allocation {
     /// Creates a new [`Allocation`] out of the provided parameters.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "no such thing as too many arguments"
-    )]
+    // TODO: Refactor to satisfy `clippy::too_many_arguments` lint.
+    #[expect(clippy::too_many_arguments, reason = "needs refactoring")]
     pub(crate) fn new(
         turn_socket: Arc<dyn Transport + Send + Sync>,
         relay_socket: Arc<UdpSocket>,

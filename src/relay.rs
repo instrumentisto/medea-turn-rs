@@ -60,9 +60,9 @@ impl Allocator {
         &self,
         use_ipv4: bool,
     ) -> Result<(Arc<UdpSocket>, SocketAddr, PortGuard), Error> {
-        #[expect(
+        #[expect( // guards are not intended to be read, only exist
             clippy::collection_is_never_read,
-            reason = "not intended to be read"
+            reason = "guards are not intended to be read, only exist"
         )]
         let mut failed_guards = Vec::new();
 
@@ -90,11 +90,11 @@ impl Allocator {
                 Err(e) => {
                     log::warn!(
                         "Failed to bind relay socket on port {port}: {e}. \
-                        Attempt #{attempt}/{}",
+                         Attempt #{attempt}/{}",
                         self.max_retries,
                     );
                     // Keep failed ports out of the pool for the duration of
-                    // this call so we do not keep retrying the same busy port.
+                    // this call, to not keep retrying the same busy port.
                     failed_guards.push(guard);
                 }
             }
@@ -110,8 +110,9 @@ pub(crate) struct PortPool {
     /// Bit-vector of available ports, relative to `min_port`.
     bits: Arc<Mutex<Vec<u64>>>,
 
-    /// Lowest port number covered by this pool. Acts as an offset
-    /// when accessing bitvec.
+    /// Lowest port number covered by this [`PortPool`].
+    ///
+    /// Acts as an offset when accessing bitvec.
     min_port: u16,
 }
 
@@ -129,8 +130,8 @@ impl PortPool {
         Self { bits: Arc::new(Mutex::new(bits)), min_port }
     }
 
-    /// Claims and returns a random available port, or [`None`] if all ports
-    /// are currently in use.
+    /// Claims and returns a random available port, or [`None`] if all ports are
+    /// currently in use.
     fn acquire(&self) -> Option<u16> {
         #[expect(clippy::unwrap_used, reason = "locking")]
         let mut bits = self.bits.lock().unwrap();
@@ -150,7 +151,8 @@ impl PortPool {
             bits[word_idx] &= !(1u64 << bit);
             drop(bits);
 
-            // word_idx * 64 <= 65472 and bit <= 63, so neither try_from fails.
+            // `word_idx * 64 <= 65472` and `bit <= 63`, so neither `try_from`
+            // conversion fails.
             #[expect(clippy::unwrap_used, reason = "bounded by pool size")]
             let offset = u16::try_from(word_idx * 64).unwrap()
                 + u16::try_from(bit).unwrap();
@@ -174,7 +176,7 @@ impl PortPool {
     }
 }
 
-/// RAII guard that returns a relay port to its [`PortPool`] when dropped.
+/// Guard returning a relay port to its [`PortPool`] once dropped.
 ///
 /// Obtained via [`Allocator::allocate_conn()`].
 #[derive(Debug)]
@@ -193,19 +195,14 @@ impl Drop for PortGuard {
 }
 
 #[cfg(test)]
-mod test {
+mod port_pool_spec {
     use std::{
         collections::HashSet,
-        net::IpAddr,
         sync::{Arc, Mutex},
         thread,
-        time::Duration,
     };
 
-    use tokio::net::UdpSocket;
-
-    use super::{Allocator, PortGuard, PortPool};
-    use crate::Error;
+    use super::{PortGuard, PortPool};
 
     impl PortPool {
         /// Creates an empty pool (no ports available).
@@ -221,11 +218,13 @@ mod test {
     }
 
     #[test]
-    fn port_pool_acquire_exhausts_range() {
+    fn acquire_exhausts_range() {
         let pool = PortPool::new(20_000, 20_004);
         let mut seen = HashSet::new();
+
         for _ in 0..5 {
             let p = pool.acquire().expect("expected available port");
+
             assert!((20_000..=20_004).contains(&p));
             assert!(seen.insert(p), "duplicate port {p}");
         }
@@ -233,43 +232,53 @@ mod test {
     }
 
     #[test]
-    fn port_pool_release_allows_reacquire() {
+    fn release_allows_reacquire() {
         let pool = PortPool::new(30_000, 30_000);
+
         assert_eq!(pool.acquire(), Some(30_000));
         assert!(pool.acquire().is_none());
+
         pool.release(30_000);
+
         assert_eq!(pool.acquire(), Some(30_000));
         assert!(pool.acquire().is_none());
     }
 
     #[tokio::test]
-    async fn pool_single_port() {
+    async fn single_port() {
         let pool = PortPool::new(1, 1);
+
         assert_eq!(pool.acquire(), Some(1));
         assert_eq!(pool.acquire(), None);
+
         pool.release(1);
+
         assert_eq!(pool.acquire(), Some(1));
     }
 
     #[test]
-    fn port_pool_single_port_boundary_max() {
+    fn single_port_boundary_max() {
         let pool = PortPool::new(u16::MAX, u16::MAX);
+
         assert_eq!(pool.acquire(), Some(u16::MAX));
         assert!(pool.acquire().is_none());
+
         pool.release(u16::MAX);
+
         assert_eq!(pool.acquire(), Some(u16::MAX));
     }
 
     #[test]
     #[should_panic(expected = "min_port must be <= max_port")]
-    fn port_pool_new_panics_when_min_greater_than_max() {
+    fn new_panics_when_min_greater_than_max() {
         drop(PortPool::new(100, 99));
     }
 
     #[test]
-    fn port_pool_acquired_ports_stay_in_range() {
+    fn acquired_ports_stay_in_range() {
         let pool = PortPool::new(1000, 1063);
         let mut seen = HashSet::new();
+
         while let Some(p) = pool.acquire() {
             assert!((1000..=1063).contains(&p), "port {p} out of range");
             assert!(seen.insert(p), "duplicate port {p}");
@@ -278,12 +287,13 @@ mod test {
     }
 
     #[test]
-    fn port_pool_multiple_release_and_reacquire() {
+    fn multiple_release_and_reacquire() {
         let pool = PortPool::new(5000, 5002);
 
         let p0 = pool.acquire().unwrap();
         let p1 = pool.acquire().unwrap();
         let p2 = pool.acquire().unwrap();
+
         assert!(pool.acquire().is_none());
 
         pool.release(p1);
@@ -294,24 +304,13 @@ mod test {
         for _ in 0..3 {
             reclaimed.insert(pool.acquire().expect("port should be available"));
         }
+
         assert_eq!(reclaimed, HashSet::from([p0, p1, p2]));
         assert!(pool.acquire().is_none());
     }
 
     #[test]
-    fn port_guard_releases_on_drop() {
-        let pool = PortPool::new(7000, 7000);
-        assert_eq!(pool.acquire(), Some(7000));
-        assert!(pool.acquire().is_none());
-
-        let guard = PortGuard { port: 7000, pool: pool.clone() };
-        drop(guard);
-
-        assert_eq!(pool.acquire(), Some(7000));
-    }
-
-    #[test]
-    fn port_pool_concurrent_acquire_no_duplicates() {
+    fn concurrent_acquire_no_duplicates() {
         let pool = Arc::new(PortPool::new(10_000, 10_063));
         let acquired: Arc<Mutex<HashSet<u16>>> =
             Arc::new(Mutex::new(HashSet::new()));
@@ -324,6 +323,7 @@ mod test {
                     // Each thread grabs ports until none are left.
                     while let Some(p) = pool.acquire() {
                         let mut set = acquired.lock().unwrap();
+
                         assert!(set.insert(p), "duplicate port {p}");
                     }
                 })
@@ -336,9 +336,37 @@ mod test {
 
         assert_eq!(acquired.lock().unwrap().len(), 64);
     }
+}
+
+#[cfg(test)]
+mod port_guard_spec {
+    use super::{PortGuard, PortPool};
+
+    #[test]
+    fn releases_on_drop() {
+        let pool = PortPool::new(7000, 7000);
+
+        assert_eq!(pool.acquire(), Some(7000));
+        assert!(pool.acquire().is_none());
+
+        let guard = PortGuard { port: 7000, pool: pool.clone() };
+        drop(guard);
+
+        assert_eq!(pool.acquire(), Some(7000));
+    }
+}
+
+#[cfg(test)]
+mod allocator_spec {
+    use std::{net::IpAddr, thread, time::Duration};
+
+    use tokio::net::UdpSocket;
+
+    use super::Allocator;
+    use crate::Error;
 
     #[tokio::test]
-    async fn allocator_skips_busy_ports() {
+    async fn skips_busy_ports() {
         let busy = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let busy_port = busy.local_addr().unwrap().port();
         let allocator = Allocator::new(
@@ -357,7 +385,7 @@ mod test {
 
         assert_eq!(
             allocator.allocate_conn(true).await.unwrap_err(),
-            Error::PortsExhausted
+            Error::PortsExhausted,
         );
     }
 
@@ -384,19 +412,23 @@ mod test {
         // No more ports at this point.
         assert_eq!(
             allocator.allocate_conn(true).await.unwrap_err(),
-            Error::PortsExhausted
+            Error::PortsExhausted,
         );
 
         ports.sort();
+
         assert_eq!(ports, [49152, 49153, 49154]);
 
         // Now drop guard but not socket.
         drop(guard1);
+
         // Socket is alive, so allocation attempt fails.
-        assert!(allocator.allocate_conn(true).await.is_err(),);
+        assert!(allocator.allocate_conn(true).await.is_err());
+
         // Drop socket and wait a bit for system to properly kill it.
         drop(socket1);
         thread::sleep(Duration::from_millis(500));
+
         // It can be properly reused now.
         assert_eq!(allocator.allocate_conn(true).await.unwrap().2.port, 49152);
     }

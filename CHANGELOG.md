@@ -14,7 +14,7 @@ All user visible changes to this project will be documented in this file. This p
 ### BC Breaks
 
 - Removed `Error::NoSuchChannelBind` variant. ([#71])
-- `Allocator` fields are no longer public, use `Allocator::new()` constructor instead. ([#72])
+- `Allocator` fields are no longer public (use `Allocator::new()` constructor instead). ([#72])
 
 ### Added
 
