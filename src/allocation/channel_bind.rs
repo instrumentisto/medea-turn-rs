@@ -96,6 +96,7 @@ mod allocation_spec {
     use crate::{
         Allocation, Error, FiveTuple,
         attr::{ChannelNumber, Username},
+        relay,
         server::DEFAULT_ALLOC_LIFETIME,
     };
 
@@ -115,6 +116,7 @@ mod allocation_spec {
             DEFAULT_ALLOC_LIFETIME,
             Username::new(String::from("user")).unwrap(),
             None,
+            relay::PortGuard::dummy(),
         );
 
         let addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), 0);

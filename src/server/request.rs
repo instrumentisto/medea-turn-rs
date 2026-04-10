@@ -201,7 +201,6 @@ async fn handle_allocate_request(
     //    unless the client and server agree to use another mechanism through
     //    some procedure outside the scope of this document.
 
-    let mut requested_port = 0;
     let mut use_ipv4 = true;
 
     // 2. The server checks if the 5-tuple is currently in use by an existing
@@ -329,26 +328,12 @@ async fn handle_allocate_request(
     //    server cannot satisfy the request, then the server rejects the request
     //    with a 508 (Insufficient Capacity) error.
     if even_port.is_some() {
-        let mut random_port = 1;
+        // No reason to support EVEN-PORT, it's pretty much obsolete and not
+        // used by libwebrtc.
+        respond_with_err(&msg, InsufficientCapacity, conn, five_tuple.src_addr)
+            .await;
 
-        while random_port % 2 != 0 {
-            random_port = match allocs.get_random_even_port().await {
-                Ok(port) => port,
-                Err(err) => {
-                    respond_with_err(
-                        &msg,
-                        InsufficientCapacity,
-                        conn,
-                        five_tuple.src_addr,
-                    )
-                    .await;
-
-                    return Err(err);
-                }
-            };
-        }
-
-        requested_port = random_port;
+        return Err(Error::NoEvenPortSupport);
     }
 
     // If the request contains a `LIFETIME` attribute, then the server computes
@@ -367,7 +352,6 @@ async fn handle_allocate_request(
         .create_allocation(
             five_tuple,
             Arc::clone(conn),
-            requested_port,
             lifetime,
             creds.uname.clone(),
             use_ipv4,
@@ -1064,13 +1048,13 @@ mod handle_spec {
 
         let mut allocation_manager =
             allocation::Manager::new(allocation::ManagerConfig {
-                relay_addr_generator: relay::Allocator {
-                    relay_address: IpAddr::from([127, 0, 0, 1]),
-                    min_port: 49152,
-                    max_port: 65535,
-                    max_retries: 10,
-                    address: String::from("127.0.0.1"),
-                },
+                relay_addr_generator: relay::Allocator::new(
+                    IpAddr::from([127, 0, 0, 1]),
+                    String::from("127.0.0.1"),
+                    49152,
+                    65535,
+                    1,
+                ),
                 alloc_close_notify: None,
             });
 
@@ -1089,7 +1073,6 @@ mod handle_spec {
             .create_allocation(
                 five_tuple,
                 Arc::clone(&conn),
-                0,
                 Duration::from_secs(3600),
                 Username::new(STATIC_KEY.to_owned()).unwrap(),
                 true,
@@ -1119,13 +1102,13 @@ mod handle_spec {
 
         let mut turn = Some(TurnCtx {
             conf: TurnConfig {
-                relay_addr_generator: Allocator {
-                    relay_address: IpAddr::from([127, 0, 0, 1]),
-                    min_port: 0,
-                    max_port: 0,
-                    max_retries: 0,
-                    address: "".to_string(),
-                },
+                relay_addr_generator: Allocator::new(
+                    IpAddr::from([127, 0, 0, 1]),
+                    String::new(),
+                    0,
+                    0,
+                    1,
+                ),
                 realm: STATIC_KEY.to_owned(),
                 auth_handler: Arc::new(TestAuthHandler {}),
                 channel_bind_lifetime: Duration::from_secs(60),
