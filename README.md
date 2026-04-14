@@ -16,6 +16,13 @@ Majorly refactored hard fork of the [`webrtc-rs/turn` crate](https://github.com/
 
 
 
+## Status
+
+__PROJECT IS CLOSED AND ARCHIVED. NO MAINTAINING WILL BE CONTINUED.__
+
+
+
+
 ## License
 
 Copyright © 2024-2026 Instrumentisto Team, <https://github.com/instrumentisto>

@@ -17,6 +17,13 @@ Lightweight [STUN]/[TURN] server
 
 
 
+## Status
+
+__PROJECT IS CLOSED AND ARCHIVED. NO MAINTAINING WILL BE CONTINUED.__
+
+
+
+
 ## Usage
 
 Can be configured with a `config.toml` file. Path to the configuration file can be provided:
